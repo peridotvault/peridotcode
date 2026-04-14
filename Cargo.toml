@@ -1,0 +1,66 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cli",
+    "crates/tui",
+    "crates/core",
+    "crates/model_gateway",
+    "crates/template_engine",
+    "crates/fs_engine",
+    "crates/command_runner",
+    "crates/skills",
+    "crates/shared",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["PeridotVault"]
+repository = "https://github.com/peridotvault/peridotcode"
+rust-version = "1.78"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "fs",
+] }
+walkdir = "2"
+camino = "1"
+dirs = "5"
+dotenvy = "0.15"
+schemars = "0.8"
+uuid = { version = "1", features = ["v4", "serde"] }
+ratatui = "0.29"
+crossterm = "0.28"
+async-trait = "0.1"
+peridot-model-gateway = { path = "crates/model_gateway" }
+peridot-shared = { path = "crates/shared" }
+peridot-core = { path = "crates/core" }
+peridot-tui = { path = "crates/tui" }
+peridot-template-engine = { path = "crates/template_engine" }
+peridot-fs-engine = { path = "crates/fs_engine" }
+peridot-command-runner = { path = "crates/command_runner" }
+peridot-skills = { path = "crates/skills" }
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

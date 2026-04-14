@@ -1,0 +1,88 @@
+# PeridotCode Configuration File
+# 
+# This is an example configuration file for PeridotCode.
+# Copy this to your platform-specific config location:
+#   - Linux/macOS: ~/.config/peridotcode/config.toml
+#   - Windows: %APPDATA%\peridotcode\config.toml
+#
+# Or use a project-specific .env file for environment-based configuration.
+
+# =============================================================================
+# DEFAULT SETTINGS
+# =============================================================================
+
+# The default provider to use when none is specified
+# Options: "openrouter", "openai", "anthropic", "gemini"
+default_provider = "openrouter"
+
+# The default model to use
+# Format depends on provider (provider-specific model IDs)
+default_model = "anthropic/claude-3.5-sonnet"
+
+# =============================================================================
+# PROVIDER CONFIGURATION
+# =============================================================================
+
+[providers.openrouter]
+# Enable or disable this provider
+enabled = true
+
+# API key - use "env:VARNAME" to reference an environment variable
+# This keeps your secrets out of the config file
+api_key = "env:OPENROUTER_API_KEY"
+
+# Base URL for the API (optional, uses provider default if not set)
+base_url = "https://openrouter.ai/api/v1"
+
+# Default model for this provider (optional, overrides global default)
+default_model = "anthropic/claude-3.5-sonnet"
+
+# Request timeout in seconds (optional, default: 60)
+timeout_seconds = 60
+
+# Provider-specific extra settings (optional)
+[providers.openrouter.extra]
+# Example: Custom headers for OpenRouter
+# http_referer = "https://yourdomain.com"
+
+# -----------------------------------------------------------------------------
+# OpenAI Provider (Future support)
+# -----------------------------------------------------------------------------
+[providers.openai]
+enabled = false
+api_key = "env:OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+default_model = "gpt-4o-mini"
+timeout_seconds = 60
+
+# -----------------------------------------------------------------------------
+# Anthropic Provider (Future support)
+# -----------------------------------------------------------------------------
+[providers.anthropic]
+enabled = false
+api_key = "env:ANTHROPIC_API_KEY"
+base_url = "https://api.anthropic.com/v1"
+default_model = "claude-3-sonnet-20240229"
+timeout_seconds = 60
+
+# -----------------------------------------------------------------------------
+# Google Gemini Provider (Future support)
+# -----------------------------------------------------------------------------
+[providers.gemini]
+enabled = false
+api_key = "env:GEMINI_API_KEY"
+base_url = "https://generativelanguage.googleapis.com/v1"
+default_model = "gemini-1.5-flash"
+timeout_seconds = 60
+
+# =============================================================================
+# EXAMPLE: Minimal Configuration
+# =============================================================================
+# For the simplest setup, you only need:
+#
+# default_provider = "openrouter"
+# 
+# [providers.openrouter]
+# enabled = true
+# api_key = "env:OPENROUTER_API_KEY"
+# =============================================================================

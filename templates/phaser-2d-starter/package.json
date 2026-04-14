@@ -1,0 +1,21 @@
+{
+  "name": "{{game_name_snake}}",
+  "version": "1.0.0",
+  "description": "{{game_description}}",
+  "type": "module",
+  "scripts": {
+    "dev": "npx http-server -p 8080 -o",
+    "start": "npm run dev",
+    "build": "echo 'Build step not configured yet'"
+  },
+  "keywords": [
+    "phaser",
+    "game",
+    "html5"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

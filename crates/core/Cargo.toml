@@ -1,0 +1,21 @@
+[package]
+name = "peridot-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Orchestration, planning, and project context for PeridotCode"
+
+[dependencies]
+peridot-shared = { workspace = true }
+peridot-fs-engine = { workspace = true }
+peridot-template-engine = { workspace = true }
+peridot-command-runner = { workspace = true }
+peridot-skills = { workspace = true }
+peridot-model-gateway = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"

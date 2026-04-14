@@ -1,0 +1,14 @@
+id = "phaser-2d-starter"
+name = "Phaser 2D Starter"
+description = "A minimal playable Phaser 3 starter project with a basic scene and player placeholder"
+stack = "phaser"
+files = [
+    "index.html",
+    "package.json",
+    "README.md",
+    "src/main.js",
+    "src/scenes/BootScene.js",
+    "src/scenes/GameScene.js",
+    "src/entities/Player.js"
+]
+placeholders = ["game_title", "game_name_snake", "game_description"]

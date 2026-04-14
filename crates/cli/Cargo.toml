@@ -1,0 +1,26 @@
+[package]
+name = "peridot-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI entrypoint for PeridotCode"
+default-run = "peridotcode"
+
+[[bin]]
+name = "peridotcode"
+path = "src/main.rs"
+
+[dependencies]
+peridot-shared = { workspace = true }
+peridot-core = { workspace = true }
+peridot-tui = { workspace = true }
+peridot-model-gateway = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]

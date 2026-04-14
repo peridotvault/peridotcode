@@ -1,0 +1,25 @@
+[package]
+name = "peridot-model-gateway"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Model/provider abstraction layer for PeridotCode"
+
+[dependencies]
+peridot-shared = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+async-trait = { workspace = true }
+toml = { workspace = true }
+dirs = { workspace = true }
+dotenvy = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"
+tokio-test = "0.4"

@@ -1,0 +1,19 @@
+[package]
+name = "peridot-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal UI for PeridotCode"
+
+[dependencies]
+peridot-shared = { workspace = true }
+peridot-core = { workspace = true }
+peridot-model-gateway = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]

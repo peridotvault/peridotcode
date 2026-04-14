@@ -1,0 +1,15 @@
+[package]
+name = "peridot-fs-engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Safe file system operations for PeridotCode"
+
+[dependencies]
+peridot-shared = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"
