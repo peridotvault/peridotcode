@@ -1,0 +1,46 @@
+--- crates/core/src/orchestrator.rs
++++ crates/core/src/orchestrator.rs
+@@ -834,44 +834,6 @@ pub async fn example_create_new_game() {
+ ///     example_inference_flow().await;
+ /// }
+ /// ```
+-pub async fn example_inference_flow() {
+-    // ...
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    use peridot_model_gateway::{ConfigManager, GatewayConfig, ProviderConfig, ProviderId};
+-    use peridot_shared::PromptInput;
+-
+-    #[tokio::test]
+-    async fn test_orchestrator_missing_credentials() {
+-        let mut config = GatewayConfig::new();
+-        // Setup provider without API key
+-        let mut provider_config = ProviderConfig::new();
+-        provider_config.enabled = true;
+-        let provider_id = ProviderId::openrouter();
+-        config.set_provider(provider_id.clone(), provider_config);
+-        config.set_default_provider(provider_id);
+-
+-        let config_manager = ConfigManager::with_config(config);
+-
+-        let mut orchestrator = Orchestrator::new(OrchestratorConfig::default()).unwrap();
+-        orchestrator.config_manager = Some(config_manager);
+-
+-        let result = orchestrator.process_prompt_with_ai(PromptInput::new("test")).await;
+-
+-        assert!(!result.success);
+-        match result.error {
+-            Some(OrchestratorError::MissingCredentials(msg)) => {
+-                assert!(msg.contains("No API key configured for openrouter"));
+-            }
+-            _ => panic!("Expected MissingCredentials error"),
+-        }
+-    }
+-}
+-/// ```
+ pub async fn example_inference_flow() {
+     println!("=== Example: Prompt → Model Gateway → Response Flow ===\n");
+ 

@@ -543,8 +543,8 @@ fn render_welcome(app: &App) -> Text<'_> {
 }
 
 /// Render input screen content
-fn render_input(_app: &App) -> Text<'_> {
-    Text::from(vec![
+fn render_input(app: &App) -> Text<'_> {
+    let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             "Describe your game:",
@@ -553,17 +553,45 @@ fn render_input(_app: &App) -> Text<'_> {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("Example: 'Make a 2D platformer with jumping'"),
-        Line::from(""),
-    ])
+    ];
+
+    // Display the user's input
+    let input = app.input_buffer();
+    if input.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Type your prompt here...",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            input,
+            Style::default().fg(Color::White),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Example: 'Make a 2D platformer with jumping'",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press Enter to submit, Esc to cancel",
+        Style::default().fg(Color::Yellow),
+    )));
+
+    Text::from(lines)
 }
 
 /// Render processing screen content
-fn render_processing(_app: &App) -> Text<'_> {
+fn render_processing(app: &App) -> Text<'_> {
+    const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let frame = SPINNER_FRAMES[app.spinner_tick() % SPINNER_FRAMES.len()];
+
     Text::from(vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Processing your request...",
+            format!("{} Processing your request...", frame),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -572,7 +600,10 @@ fn render_processing(_app: &App) -> Text<'_> {
         Line::from("The AI is analyzing your prompt and preparing"),
         Line::from("the game scaffold. This may take a moment."),
         Line::from(""),
-        Line::from("Press Esc to cancel."),
+        Line::from(Span::styled(
+            "Press Esc or Ctrl+C to cancel.",
+            Style::default().fg(Color::DarkGray),
+        )),
     ])
 }
 

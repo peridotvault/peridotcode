@@ -1,5 +1,5 @@
 /**
- * Main entry point for {{game_title}}
+ * Main entry point for core
  * Sets up the Phaser game configuration
  */
 
@@ -25,4 +25,4 @@ const config = {
 // Create the game instance
 const game = new Phaser.Game(config);
 
-console.log('{{game_title}} initialized');
+console.log('core initialized');

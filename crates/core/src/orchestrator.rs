@@ -70,7 +70,6 @@ use std::path::PathBuf;
 
 use crate::context::ProjectContext;
 use crate::gateway_integration::{GatewayClient, InferenceStatus};
-use crate::inference::InferenceClient as LegacyInferenceClient;
 use crate::intent::{Classification, Intent, IntentClassifier, IntentParams};
 use crate::planner::{Action, ExecutionPlan, Planner};
 
@@ -113,10 +112,28 @@ pub struct Orchestrator {
     config: OrchestratorConfig,
     /// Template engine (generates project scaffolding)
     template_engine: peridot_template_engine::TemplateEngine,
-    /// Gateway client for AI-powered features (new, recommended)
+    /// Gateway client for AI-powered features
     gateway_client: Option<GatewayClient>,
-    /// Legacy inference client (deprecated, use gateway_client)
-    inference_client: Option<LegacyInferenceClient>,
+    /// Configuration manager
+    config_manager: Option<peridot_model_gateway::ConfigManager>,
+}
+
+/// Orchestrator Error
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrchestratorError {
+    /// Missing or invalid API key
+    MissingCredentials(String),
+    /// General error
+    Other(String),
+}
+
+impl std::fmt::Display for OrchestratorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrchestratorError::MissingCredentials(msg) => write!(f, "{}", msg),
+            OrchestratorError::Other(msg) => write!(f, "{}", msg),
+        }
+    }
 }
 
 impl Orchestrator {
@@ -144,7 +161,7 @@ impl Orchestrator {
             config,
             template_engine,
             gateway_client: None,
-            inference_client: None,
+            config_manager: None,
         })
     }
 
@@ -172,6 +189,7 @@ impl Orchestrator {
                     tracing::warn!("AI inference not available: {}", status.display_message());
                     // Continue without AI - orchestrator still functional
                 }
+                orchestrator.config_manager = Some(config_manager);
             }
             Err(e) => {
                 tracing::warn!("Could not load config for AI: {}", e);
@@ -184,12 +202,6 @@ impl Orchestrator {
     /// Set the gateway client
     pub fn set_gateway_client(&mut self, client: GatewayClient) {
         self.gateway_client = Some(client);
-    }
-
-    /// Set the legacy inference client (deprecated, use set_gateway_client)
-    #[deprecated(since = "0.1.0", note = "Use set_gateway_client instead")]
-    pub fn set_inference_client(&mut self, client: LegacyInferenceClient) {
-        self.inference_client = Some(client);
     }
 
     /// Check if AI inference is available
@@ -287,7 +299,7 @@ impl Orchestrator {
                 intent: classification.intent,
                 plan,
                 execution_result: None,
-                error: Some(e.to_string()),
+                error: Some(OrchestratorError::Other(e.to_string())),
             },
         }
     }
@@ -299,6 +311,19 @@ impl Orchestrator {
     /// AI classification fails or is not available.
     pub async fn process_prompt_with_ai(&self, input: PromptInput) -> OrchestratorResult {
         tracing::info!("Processing prompt with AI: {}", input.text);
+
+        // Pre-flight credentials validation
+        if let Some(config) = &self.config_manager {
+            if let Err(peridot_model_gateway::GatewayError::CredentialError(msg)) = config.validate_credentials() {
+                return OrchestratorResult {
+                    success: false,
+                    intent: Intent::Unsupported,
+                    plan: ExecutionPlan::new("error", "Validation failed", Intent::Unsupported),
+                    execution_result: None,
+                    error: Some(OrchestratorError::MissingCredentials(msg)),
+                };
+            }
+        }
 
         // Step 1: Classify (with AI enhancement if available)
         let classification = if self.has_ai() {
@@ -338,7 +363,7 @@ impl Orchestrator {
                 intent: classification.intent,
                 plan,
                 execution_result: None,
-                error: Some(e.to_string()),
+                error: Some(OrchestratorError::Other(e.to_string())),
             },
         }
     }
@@ -485,8 +510,8 @@ pub struct OrchestratorResult {
     pub plan: ExecutionPlan,
     /// Execution result if successful
     pub execution_result: Option<ExecutionResult>,
-    /// Error message if failed
-    pub error: Option<String>,
+    /// Error if failed
+    pub error: Option<OrchestratorError>,
 }
 
 impl OrchestratorResult {
@@ -495,7 +520,7 @@ impl OrchestratorResult {
         if self.success {
             format!("Success: {}", self.plan.description)
         } else {
-            format!("Failed: {}", self.error.as_deref().unwrap_or("Unknown error"))
+            format!("Failed: {}", self.error.as_ref().map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string()))
         }
     }
 
@@ -550,10 +575,12 @@ pub struct ExecutionResult {
 ///
 /// This handle provides a convenient interface for the TUI to interact
 /// with the orchestrator, including AI-powered features when available.
-#[derive(Debug)]
+/// The inner state is wrapped in `Arc` so this handle is cheaply cloneable
+/// and can be shared safely across async tasks.
+#[derive(Debug, Clone)]
 pub struct OrchestratorHandle {
     /// Cached orchestrator instance with AI support
-    orchestrator: Option<Orchestrator>,
+    orchestrator: std::sync::Arc<Option<Orchestrator>>,
     /// Whether AI is available
     has_ai: bool,
 }
@@ -564,7 +591,7 @@ impl OrchestratorHandle {
     /// Initializes without AI. Call `initialize_with_ai()` to enable AI features.
     pub fn new() -> Self {
         Self {
-            orchestrator: None,
+            orchestrator: std::sync::Arc::new(None),
             has_ai: false,
         }
     }
@@ -582,7 +609,7 @@ impl OrchestratorHandle {
                     has_ai
                 );
                 Self {
-                    orchestrator: Some(orch),
+                    orchestrator: std::sync::Arc::new(Some(orch)),
                     has_ai,
                 }
             }
@@ -591,16 +618,24 @@ impl OrchestratorHandle {
                 // Try to create without AI
                 match Orchestrator::new(OrchestratorConfig::default()) {
                     Ok(orch) => Self {
-                        orchestrator: Some(orch),
+                        orchestrator: std::sync::Arc::new(Some(orch)),
                         has_ai: false,
                     },
                     Err(_) => Self {
-                        orchestrator: None,
+                        orchestrator: std::sync::Arc::new(None),
                         has_ai: false,
                     },
                 }
             }
         }
+    }
+
+    /// Initialize from an existing ConfigManager
+    ///
+    /// Used after setup flow completes to re-initialize with fresh credentials.
+    pub async fn new_with_client(config_manager: &peridot_model_gateway::ConfigManager) -> PeridotResult<Self> {
+        let _ = config_manager; // used to signal caller intent; actual init uses ::initialize_with_ai
+        Ok(Self::initialize_with_ai().await)
     }
 
     /// Check if AI is available
@@ -622,9 +657,9 @@ impl OrchestratorHandle {
     /// Uses AI-enhanced processing if available, otherwise falls back to
     /// keyword-based classification.
     pub async fn process_prompt(&self, prompt: &str) -> OrchestratorResult {
-        if let Some(ref orch) = self.orchestrator {
+        if let Some(ref orch) = *self.orchestrator {
             let input = PromptInput::new(prompt);
-            
+
             // Use AI-enhanced processing if available
             if self.has_ai {
                 orch.process_prompt_with_ai(input).await
@@ -637,7 +672,7 @@ impl OrchestratorHandle {
                 intent: Intent::Unsupported,
                 plan: ExecutionPlan::new("error", "Failed to initialize", Intent::Unsupported),
                 execution_result: None,
-                error: Some("Orchestrator not initialized".to_string()),
+                error: Some(OrchestratorError::Other("Orchestrator not initialized".to_string())),
             }
         }
     }
@@ -647,7 +682,7 @@ impl OrchestratorHandle {
     /// This sends the prompt directly to the AI model and returns the response.
     /// Useful for getting AI feedback without executing a full plan.
     pub async fn ask_ai(&self, prompt: &str) -> Result<String, String> {
-        if let Some(ref orch) = self.orchestrator {
+        if let Some(ref orch) = *self.orchestrator {
             if self.has_ai {
                 match orch.infer(prompt).await {
                     Ok((response, _status)) => Ok(response),
@@ -926,5 +961,38 @@ pub async fn example_ai_intent_classification() {
         let classification = classifier.classify(&input);
         println!("  Keyword Classified: {}", classification.intent.display_name());
         println!();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use peridot_model_gateway::{ConfigManager, GatewayConfig, ProviderConfig, ProviderId};
+    use peridot_shared::PromptInput;
+
+    #[tokio::test]
+    async fn test_orchestrator_missing_credentials() {
+        let mut config = GatewayConfig::new();
+        // Setup provider without API key
+        let mut provider_config = ProviderConfig::new();
+        provider_config.enabled = true;
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id.clone(), provider_config);
+        config.set_default_provider(provider_id);
+
+        let config_manager = ConfigManager::with_config(config);
+
+        let mut orchestrator = Orchestrator::new(OrchestratorConfig::default()).unwrap();
+        orchestrator.config_manager = Some(config_manager);
+
+        let result = orchestrator.process_prompt_with_ai(PromptInput::new("test")).await;
+
+        assert!(!result.success);
+        match result.error {
+            Some(OrchestratorError::MissingCredentials(msg)) => {
+                assert!(msg.contains("No API key configured for openrouter"));
+            }
+            _ => panic!("Expected MissingCredentials error"),
+        }
     }
 }

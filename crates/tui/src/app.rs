@@ -43,8 +43,6 @@ pub struct App {
     should_quit: bool,
     /// Orchestrator handle for processing
     orchestrator: OrchestratorHandle,
-    /// Current prompt being processed (if any)
-    pending_prompt: Option<String>,
     /// Setup state (if in setup flow)
     setup_state: Option<SetupState>,
     /// Configuration manager
@@ -55,6 +53,17 @@ pub struct App {
     model_info: Option<String>,
     /// Flag to signal setup is complete and needs cleanup
     setup_complete_pending: bool,
+    /// Channel receiver for orchestrator result
+    #[allow(clippy::type_complexity)]
+    inference_rx: Option<tokio::sync::mpsc::UnboundedReceiver<peridot_core::orchestrator::OrchestratorResult>>,
+    /// Task handle for cancellation
+    inference_task: Option<tokio::task::JoinHandle<()>>,
+    /// Cancellation sender for current task
+    cancel_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Spinner animation tick
+    spinner_tick: usize,
+    /// Last spinner update time
+    last_spinner_update: Option<std::time::Instant>,
 }
 
 impl App {
@@ -72,12 +81,16 @@ impl App {
             status_message: "Press Enter to start".to_string(),
             should_quit: false,
             orchestrator: OrchestratorHandle::new(),
-            pending_prompt: None,
             setup_state: None,
             config_manager: None,
             provider_info: None,
             model_info: None,
             setup_complete_pending: false,
+            inference_rx: None,
+            inference_task: None,
+            cancel_tx: None,
+            spinner_tick: 0,
+            last_spinner_update: None,
         }
     }
 
@@ -218,6 +231,11 @@ impl App {
         self.model_info.as_deref()
     }
 
+    /// Get spinner tick for animation
+    pub fn spinner_tick(&self) -> usize {
+        self.spinner_tick
+    }
+
     /// Update state - called each frame for async operations
     pub async fn update(&mut self) {
         // Handle pending setup completion
@@ -232,8 +250,7 @@ impl App {
                 // Build and validate configuration
                 if let Some(config) = setup.build_config() {
                     setup.config = Some(config.clone());
-                    
-                    // Try to save
+
                     match setup.save_config() {
                         Ok(_) => {
                             setup.step = SetupStep::Complete;
@@ -252,51 +269,81 @@ impl App {
             return;
         }
 
-        // Process pending prompt if in Processing state
-        if let Some(prompt) = self.pending_prompt.take() {
-            self.task_log.push(format!("> {}", prompt));
-            self.task_log.push("Classifying intent...".to_string());
+        // Tick spinner while processing
+        if self.state == AppState::Processing {
+            let now = std::time::Instant::now();
+            let elapsed = self.last_spinner_update
+                .map(|t| now.duration_since(t))
+                .unwrap_or(Duration::from_secs(1));
+            if elapsed >= Duration::from_millis(120) {
+                self.spinner_tick = self.spinner_tick.wrapping_add(1);
+                self.last_spinner_update = Some(now);
+            }
+        }
 
-            // Call orchestrator
-            let result = self.orchestrator.process_prompt(&prompt).await;
+        // Poll for completed inference
+        if let Some(rx) = &mut self.inference_rx {
+            if let Ok(result) = rx.try_recv() {
+                self.inference_rx = None;
+                self.inference_task = None;
+                self.cancel_tx = None;
+                self.apply_orchestrator_result(result);
+                self.state = AppState::Results;
+            }
+        }
+    }
 
-            // Update UI based on result
-            self.task_log.push(format!(
-                "Intent: {} ({}% confidence)",
-                result.intent.display_name(),
-                if result.success { 80 } else { 0 }
-            ));
+    /// Apply an orchestrator result to the UI state
+    fn apply_orchestrator_result(&mut self, result: peridot_core::orchestrator::OrchestratorResult) {
+        self.task_log.push(format!(
+            "Intent: {} ({}% confidence)",
+            result.intent.display_name(),
+            if result.success { 80 } else { 0 }
+        ));
 
-            if result.success {
-                self.task_log.push(format!("Plan: {}", result.plan.summary()));
-                
-                // Update file summary with detailed change information
-                let changes: Vec<String> = result.file_changes()
-                    .iter()
-                    .map(|c| format!("{} {}", c.change_type.symbol(), c.path.display()))
-                    .collect();
-                
-                if !changes.is_empty() {
-                    self.file_summary = changes;
-                } else {
-                    self.file_summary = vec!["No files changed".to_string()];
-                }
-                
-                // Add change summary to task log
-                if let Some(summary) = result.change_summary() {
-                    self.task_log.push(format!("Changes: {}", summary));
-                }
+        if result.intent == peridot_core::intent::Intent::Unsupported {
+            self.task_log.push(
+                "This feature is not yet supported in alpha. Try asking to create a new game or add a feature."
+                    .to_string(),
+            );
+            self.status_message = "Ready. Press 'n' for new prompt".to_string();
+            return;
+        }
 
-                self.status_message = "Success! Press 'n' for new prompt".to_string();
+        if result.success {
+            self.task_log.push(format!("Plan: {}", result.plan.summary()));
+
+            let changes: Vec<String> = result
+                .file_changes()
+                .iter()
+                .map(|c| format!("{} {}", c.change_type.symbol(), c.path.display()))
+                .collect();
+
+            if !changes.is_empty() {
+                self.file_summary = changes;
             } else {
-                self.task_log.push(format!(
-                    "Error: {}",
-                    result.error.as_deref().unwrap_or("Unknown error")
-                ));
-                self.status_message = "Failed. Press 'n' to retry".to_string();
+                self.file_summary = vec!["No files changed".to_string()];
             }
 
-            self.state = AppState::Results;
+            if let Some(summary) = result.change_summary() {
+                self.task_log.push(format!("Changes: {}", summary));
+            }
+
+            self.status_message = "Success! Press 'n' for new prompt".to_string();
+        } else {
+            if let Some(err) = &result.error {
+                match err {
+                    peridot_core::orchestrator::OrchestratorError::MissingCredentials(msg) => {
+                        self.task_log.push(format!("Configuration Error: {}", msg));
+                    }
+                    peridot_core::orchestrator::OrchestratorError::Other(msg) => {
+                        self.task_log.push(format!("Error: {}", msg));
+                    }
+                }
+            } else {
+                self.task_log.push("Error: Unknown error".to_string());
+            }
+            self.status_message = "Failed. Press 'n' to retry".to_string();
         }
     }
 
@@ -449,11 +496,22 @@ impl App {
     }
 
     fn handle_processing_keys(&mut self, key: event::KeyEvent) {
-        match key.code {
-            KeyCode::Char('c') if key.modifiers == KeyModifiers::CONTROL => {
-                self.should_quit = true;
+        let is_ctrl_c = key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL);
+        if key.code == KeyCode::Esc || is_ctrl_c {
+            // Signal the background task to stop
+            if let Some(tx) = self.cancel_tx.take() {
+                let _ = tx.send(());
             }
-            _ => {}
+            if let Some(task) = self.inference_task.take() {
+                task.abort();
+            }
+            self.inference_rx = None;
+            self.state = AppState::Input;
+            self.input_buffer.clear();
+            self.cursor_position = 0;
+            self.task_log.push("Request cancelled.".to_string());
+            self.status_message = "Ready. Enter a new prompt.".to_string();
         }
     }
 
@@ -514,9 +572,40 @@ impl App {
         }
 
         let prompt = self.input_buffer.clone();
-        self.pending_prompt = Some(prompt);
+        self.input_buffer.clear();
+        self.cursor_position = 0;
         self.state = AppState::Processing;
-        self.status_message = "Processing... Ctrl+C to cancel".to_string();
+        self.spinner_tick = 0;
+        self.last_spinner_update = Some(std::time::Instant::now());
+        self.status_message = "Processing... Esc to cancel".to_string();
+
+        self.task_log.push(format!("> {}", prompt));
+        self.task_log.push("Classifying intent...".to_string());
+
+        // Create channels for result and cancellation
+        let (result_tx, result_rx) =
+            tokio::sync::mpsc::unbounded_channel::<peridot_core::orchestrator::OrchestratorResult>();
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+        self.inference_rx = Some(result_rx);
+        self.cancel_tx = Some(cancel_tx);
+
+        // Clone orchestrator handle for the background task
+        let orchestrator = self.orchestrator.clone();
+
+        let task = tokio::spawn(async move {
+            let inference = orchestrator.process_prompt(&prompt);
+            tokio::select! {
+                result = inference => {
+                    let _ = result_tx.send(result);
+                }
+                _ = &mut cancel_rx => {
+                    // Cancelled — drop everything
+                }
+            }
+        });
+
+        self.inference_task = Some(task);
     }
 }
 

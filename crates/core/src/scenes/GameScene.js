@@ -34,7 +34,7 @@ export default class GameScene extends Phaser.Scene {
         this.cursors = this.input.keyboard.createCursorKeys();
 
         // Display instructions
-        this.add.text(10, 10, '{{game_title}}', {
+        this.add.text(10, 10, 'core', {
             fontSize: '24px',
             fill: '#ffffff',
             backgroundColor: '#000000aa',

@@ -2,6 +2,10 @@
 
 This document lists the main known gaps and limitations after implementing the end-to-end happy-path flow.
 
+## Resolved Gaps
+
+- **API Key Error Handling**: Added `validate_credentials` pre-flight check in the orchestrator that intercepts missing keys and shows users a clean error in the TUI advising them to check their `.env`.
+
 ## Critical Gaps (Should Address Soon)
 
 ### 1. No Real Error Recovery

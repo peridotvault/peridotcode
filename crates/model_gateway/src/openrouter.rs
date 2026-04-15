@@ -296,56 +296,79 @@ impl Provider for OpenRouterClient {
             openrouter_request.model
         );
 
-        let response = self
-            .http_client
-            .post(&url)
-            .headers(self.build_request_headers())
-            .json(&openrouter_request)
-            .send()
-            .await
-            .map_err(|e| GatewayError::ProviderError {
-                provider: "openrouter".to_string(),
-                message: format!("Request failed: {}", e),
-            })?;
+        let mut attempt = 1;
+        let max_attempts = 4; // 1 initial + 3 retries
 
-        // Handle HTTP errors
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+        loop {
+            let response_result = self
+                .http_client
+                .post(&url)
+                .headers(self.build_request_headers())
+                .json(&openrouter_request)
+                .send()
+                .await;
 
-            // Try to parse error details
-            if let Ok(error_body) =
-                serde_json::from_str::<OpenRouterErrorResponse>(&error_text)
-            {
-                return Err(GatewayError::ProviderError {
-                    provider: "openrouter".to_string(),
-                    message: format!("{}: {}", error_body.error.code, error_body.error.message),
-                });
+            match response_result {
+                Ok(response) if response.status().is_success() => {
+                    // Parse successful response
+                    let openrouter_response: OpenRouterResponse = response.json().await.map_err(|e| {
+                        GatewayError::ProviderError {
+                            provider: "openrouter".to_string(),
+                            message: format!("Failed to parse response: {}", e),
+                        }
+                    })?;
+
+                    tracing::debug!(
+                        "Received response from OpenRouter: model={}",
+                        openrouter_response.model
+                    );
+
+                    return self.transform_response(openrouter_response);
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    let is_client_error = status.is_client_error();
+                    
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    
+                    if is_client_error || attempt >= max_attempts {
+                        // Don't retry 4xx errors, or we've run out of retries
+                        if let Ok(error_body) =
+                            serde_json::from_str::<OpenRouterErrorResponse>(&error_text)
+                        {
+                            return Err(GatewayError::ProviderError {
+                                provider: "openrouter".to_string(),
+                                message: format!("{}: {}", error_body.error.code, error_body.error.message),
+                            });
+                        }
+
+                        return Err(GatewayError::ProviderError {
+                            provider: "openrouter".to_string(),
+                            message: format!("HTTP {}: {}", status, error_text),
+                        });
+                    }
+                    
+                    tracing::warn!("OpenRouter API error (attempt {}): HTTP {} - {}", attempt, status, error_text);
+                }
+                Err(e) => {
+                    // Reqwest network error or timeout
+                    if attempt >= max_attempts {
+                        return Err(GatewayError::ProviderError {
+                            provider: "openrouter".to_string(),
+                            message: format!("Request failed after {} attempts: {}", attempt, e),
+                        });
+                    }
+                    tracing::warn!("OpenRouter network error (attempt {}): {}", attempt, e);
+                }
             }
-
-            return Err(GatewayError::ProviderError {
-                provider: "openrouter".to_string(),
-                message: format!("HTTP {}: {}", status, error_text),
-            });
+            
+            let delay_secs = 1 << (attempt - 1);
+            tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+            attempt += 1;
         }
-
-        // Parse successful response
-        let openrouter_response: OpenRouterResponse = response.json().await.map_err(|e| {
-            GatewayError::ProviderError {
-                provider: "openrouter".to_string(),
-                message: format!("Failed to parse response: {}", e),
-            }
-        })?;
-
-        tracing::debug!(
-            "Received response from OpenRouter: model={}",
-            openrouter_response.model
-        );
-
-        self.transform_response(openrouter_response)
     }
 
     async fn list_models(&self) -> GatewayResult<Vec<ModelInfo>> {
@@ -550,4 +573,194 @@ pub async fn create_openrouter_client(
     )?;
 
     Ok(client.with_timeout(provider_config.timeout_seconds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_openrouter_client_creation() {
+        let client = OpenRouterClient::new("test-api-key");
+        assert!(client.is_ok());
+        
+        let client = client.unwrap();
+        assert!(client.is_configured());
+        assert_eq!(client.id().as_str(), "openrouter");
+        assert_eq!(client.name(), "OpenRouter");
+    }
+
+    #[test]
+    fn test_empty_api_key_fails() {
+        let client = OpenRouterClient::new("");
+        assert!(client.is_err());
+        match client {
+            Err(GatewayError::CredentialError(_)) => {},
+            _ => panic!("Expected CredentialError for empty API key"),
+        }
+    }
+
+    #[test]
+    fn test_request_transformation() {
+        let client = OpenRouterClient::new("test-key").unwrap();
+        
+        let request = InferenceRequest::new("anthropic/claude-3.5-sonnet")
+            .with_user("Hello, world!");
+        
+        let openrouter_req = client.transform_request(request);
+        
+        assert_eq!(openrouter_req.model, "anthropic/claude-3.5-sonnet");
+        assert_eq!(openrouter_req.messages.len(), 1);
+        assert_eq!(openrouter_req.messages[0].content, "Hello, world!");
+        assert_eq!(openrouter_req.messages[0].role, "user");
+    }
+
+    #[test]
+    fn test_default_model_fallback() {
+        let client = OpenRouterClient::with_config(
+            "test-key",
+            None,
+            Some("default-model".to_string()),
+        ).unwrap();
+        
+        let request = InferenceRequest::new(""); // Empty model
+        let openrouter_req = client.transform_request(request);
+        
+        assert_eq!(openrouter_req.model, "default-model");
+    }
+
+    #[test]
+    fn test_message_conversion() {
+        // Test Message -> OpenRouterMessage
+        let msg = Message::user("Test content");
+        let or_msg: OpenRouterMessage = msg.into();
+        assert_eq!(or_msg.role, "user");
+        assert_eq!(or_msg.content, "Test content");
+
+        // Test system message
+        let msg = Message::system("System prompt");
+        let or_msg: OpenRouterMessage = msg.into();
+        assert_eq!(or_msg.role, "system");
+
+        // Test assistant message
+        let msg = Message::assistant("Assistant response");
+        let or_msg: OpenRouterMessage = msg.into();
+        assert_eq!(or_msg.role, "assistant");
+    }
+
+    #[test]
+    fn test_openrouter_message_to_message() {
+        let or_msg = OpenRouterMessage {
+            role: "assistant".to_string(),
+            content: "Hello".to_string(),
+        };
+        let msg: Message = or_msg.into();
+        assert!(matches!(msg.role, Role::Assistant));
+        assert_eq!(msg.content, "Hello");
+    }
+
+    #[test]
+    fn test_static_model_list() {
+        let models = static_model_list();
+        assert!(!models.is_empty());
+        
+        // Check that recommended models are included
+        let model_ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert!(model_ids.contains(&"anthropic/claude-3.5-sonnet"));
+    }
+
+    #[tokio::test]
+    async fn test_list_models_returns_models() {
+        let client = OpenRouterClient::new("test-key").unwrap();
+        
+        // This should return the static list since the API call will fail with invalid key
+        let models = client.list_models().await;
+        assert!(models.is_ok());
+        
+        let models = models.unwrap();
+        assert!(!models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_infer_retry_success() {
+        use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
+        
+        // Disable retry delays in tests internally if possible, but here we just use small timeouts
+        // Note: the test will take 1+2+4=7 seconds if it retries 3 times. We can just test 2 retries (3 seconds).
+        // Actually, to make it fast we would need to mock the delay or pass a time_multiplier. Let's just run it!
+        // We will mock one 500 error then a 200 success.
+        let mock_server = MockServer::start().await;
+        
+        let response_200 = ResponseTemplate::new(200)
+            .set_body_json(serde_json::json!({
+                "id": "test-id",
+                "model": "test-model",
+                "choices": [
+                    {
+                        "message": { "role": "assistant", "content": "Success!" },
+                        "index": 0
+                    }
+                ]
+            }));
+
+        // Use sequential logic for wiremock
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/chat/completions"))
+            .respond_with(response_200)
+            .mount(&mock_server) // Fallback for subsequent requests
+            .await;
+
+        let client = OpenRouterClient::with_config(
+            "test-key",
+            Some(mock_server.uri()),
+            Some("default-model".to_string()),
+        ).unwrap();
+
+        let request = InferenceRequest::new("default-model").with_user("Hi");
+        let result = client.infer(request).await;
+
+        assert!(result.is_ok());
+        let msg = result.unwrap().message;
+        assert_eq!(msg.content, "Success!");
+    }
+
+    #[tokio::test]
+    async fn test_infer_retry_exhausted() {
+        use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
+        let mock_server = MockServer::start().await;
+        
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+            .mount(&mock_server)
+            .await;
+
+        let client = OpenRouterClient::with_config(
+            "test-key",
+            Some(mock_server.uri()),
+            Some("default-model".to_string()),
+        ).unwrap();
+
+        let request = InferenceRequest::new("default-model").with_user("Hi");
+        
+        // Start a timeout to ensure it actually aborts
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(10), client.infer(request)).await;
+        
+        assert!(result.is_ok()); // Did not timeout
+        let err = result.unwrap();
+        assert!(err.is_err());
+        match err.unwrap_err() {
+            GatewayError::ProviderError { message, .. } => {
+                assert!(message.contains("HTTP 502") || message.contains("Bad Gateway"));
+            }
+            _ => panic!("Expected ProviderError"),
+        }
+    }
 }

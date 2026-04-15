@@ -7,6 +7,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use include_dir::{include_dir, Dir};
+
+/// Directory containing embedded templates at compile time
+pub static EMBEDDED_TEMPLATES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../templates");
+
 /// Registry of available templates
 #[derive(Debug, Default)]
 pub struct TemplateRegistry {
@@ -108,3 +113,32 @@ fn load_template_manifest(path: &Path) -> PeridotResult<TemplateManifest> {
 
     Ok(manifest)
 }
+
+/// Load templates from embedded compiled representations
+pub fn load_templates_embedded() -> PeridotResult<TemplateRegistry> {
+    let mut registry = TemplateRegistry::new();
+
+    for entry in EMBEDDED_TEMPLATES.entries() {
+        if let Some(dir) = entry.as_dir() {
+            let path = dir.path();
+            let manifest_path = path.join(constants::TEMPLATE_MANIFEST);
+            
+            if let Some(manifest_file) = dir.get_file(manifest_path) {
+                if let Some(content) = manifest_file.contents_utf8() {
+                    match toml::from_str::<TemplateManifest>(content) {
+                        Ok(manifest) => {
+                            tracing::info!("Loaded embedded template: {}", manifest.id.as_ref());
+                            registry.register(manifest);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to parse embedded template manifest from {:?}: {}", path, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(registry)
+}
+
