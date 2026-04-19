@@ -12,27 +12,27 @@ export default class GameScene extends Phaser.Scene {
 
     create() {
         console.log('GameScene: Starting gameplay');
-        
+
         // Set world bounds
         this.physics.world.setBounds(0, 0, 1600, 1200);
-        
+
         // Create a simple level with ground tiles
         this.createLevel();
-        
-        // Create the player
+
+        // Create the player (will collide with platforms automatically)
         this.player = new Player(this, 400, 300);
-        
+
         // Set camera to follow player
         this.cameras.main.setBounds(0, 0, 1600, 1200);
         this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
         this.cameras.main.setZoom(1);
-        
+
         // Add some collectible items
         this.createCollectibles();
-        
+
         // Setup keyboard input
         this.cursors = this.input.keyboard.createCursorKeys();
-        
+
         // Display instructions
         this.add.text(10, 10, '{{game_title}}', {
             fontSize: '24px',
@@ -40,14 +40,14 @@ export default class GameScene extends Phaser.Scene {
             backgroundColor: '#000000aa',
             padding: { x: 10, y: 5 }
         }).setScrollFactor(0);
-        
-        this.add.text(10, 50, 'Arrow keys to move', {
+
+        this.add.text(10, 50, 'Arrow keys to move, Space to jump', {
             fontSize: '14px',
             fill: '#cccccc',
             backgroundColor: '#000000aa',
             padding: { x: 5, y: 2 }
         }).setScrollFactor(0);
-        
+
         // Score tracking
         this.score = 0;
         this.scoreText = this.add.text(10, 80, 'Score: 0', {

@@ -28,6 +28,8 @@ pub enum Intent {
     CreateNewGame,
     /// Add a feature to an existing project
     AddFeature,
+    /// Modify existing code (e.g., "tweak", "fix", "change")
+    ModifyCode,
     /// Unsupported or unrecognized request
     Unsupported,
 }
@@ -38,6 +40,7 @@ impl Intent {
         match self {
             Intent::CreateNewGame => "Create New Game",
             Intent::AddFeature => "Add Feature",
+            Intent::ModifyCode => "Modify Code",
             Intent::Unsupported => "Unsupported",
         }
     }
@@ -90,6 +93,15 @@ impl IntentClassifier {
             return Classification {
                 intent: Intent::AddFeature,
                 confidence: calculate_confidence(&text, Intent::AddFeature),
+                params,
+            };
+        }
+
+        // Check for modifications
+        if has_keywords(&text, &["modify", "tweak", "change", "update", "fix", "improve", "adjust", "edit"]) {
+            return Classification {
+                intent: Intent::ModifyCode,
+                confidence: calculate_confidence(&text, Intent::ModifyCode),
                 params,
             };
         }
@@ -157,6 +169,7 @@ fn calculate_confidence(text: &str, intent: Intent) -> u8 {
     let keywords = match intent {
         Intent::CreateNewGame => &["make", "create", "build", "game"][..],
         Intent::AddFeature => &["add", "feature"][..],
+        Intent::ModifyCode => &["modify", "tweak", "change", "update", "fix"][..],
         Intent::Unsupported => &[][..],
     };
     let matches = keywords.iter().filter(|&&kw| text.contains(kw)).count();

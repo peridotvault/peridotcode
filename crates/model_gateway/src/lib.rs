@@ -167,6 +167,8 @@ pub mod config_file;
 pub mod credentials;
 pub mod inference;
 pub mod model;
+/// Observability and tracking module
+pub mod observability;
 pub mod openai;
 pub mod openrouter;
 pub mod presets;
@@ -182,6 +184,7 @@ pub use inference::{InferenceRequest, InferenceResponse, Message, Role, UsageSta
 pub use model::{
     CostTier, ModelCapability, ModelDescriptor, ModelId, ModelTier, recommended,
 };
+pub use observability::*;
 pub use openai::{create_openai_client, OpenAIClient};
 pub use openrouter::{create_openrouter_client, OpenRouterClient};
 pub use presets::{check_environment, ConfigBuilder, ConfigPresets, EnvironmentReport};

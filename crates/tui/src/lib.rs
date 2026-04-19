@@ -18,11 +18,10 @@
 #![warn(missing_docs)]
 
 pub mod app;
-pub mod setup;
+pub mod overlays;
 pub mod ui;
 
 pub use app::{App, AppState, run_app};
-pub use setup::{SetupState, SetupStep};
 
 use peridot_shared::PeridotResult;
 use std::io;

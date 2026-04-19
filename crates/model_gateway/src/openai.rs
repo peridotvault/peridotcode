@@ -155,13 +155,19 @@ impl OpenAIClient {
 
     /// Transform internal request to OpenAI format
     fn transform_request(&self, request: InferenceRequest) -> OpenAIRequest {
-        let model = if request.model.is_empty() {
+        let mut model = if request.model.is_empty() {
             self.default_model
                 .clone()
                 .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string())
         } else {
             request.model
         };
+
+        // Normalize model ID: strip "openai/" prefix if present
+        // This handles cases where the user is switching from OpenRouter to direct OpenAI
+        if model.starts_with("openai/") {
+            model = model.replacen("openai/", "", 1);
+        }
 
         OpenAIRequest {
             model,
@@ -212,6 +218,14 @@ impl Provider for OpenAIClient {
 
     fn is_configured(&self) -> bool {
         !self.api_key.is_empty()
+    }
+
+    async fn validate_credentials(&self) -> GatewayResult<()> {
+        if self.api_key.is_empty() {
+            return Err(crate::GatewayError::CredentialError("OpenAI API key is empty".to_string()));
+        }
+        // Minimal validation - actual network check TODO
+        Ok(())
     }
 
     async fn infer(&self, request: InferenceRequest) -> GatewayResult<InferenceResponse> {
@@ -334,7 +348,7 @@ impl From<OpenAIMessage> for Message {
 /// OpenAI API response format
 #[derive(Debug, Deserialize)]
 struct OpenAIResponse {
-    id: String,
+    _id: String,
     model: String,
     choices: Vec<OpenAIChoice>,
     usage: Option<OpenAIUsage>,
@@ -344,7 +358,7 @@ struct OpenAIResponse {
 struct OpenAIChoice {
     message: OpenAIMessage,
     finish_reason: Option<String>,
-    index: u32,
+    _index: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -365,7 +379,7 @@ struct OpenAIErrorDetail {
     code: String,
     message: String,
     #[serde(rename = "type")]
-    error_type: Option<String>,
+    _error_type: Option<String>,
 }
 
 /// Get static model list for OpenAI

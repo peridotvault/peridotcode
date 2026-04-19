@@ -110,7 +110,7 @@
 //!         project_path.join("package.json").exists()
 //!     }
 //!
-//!     fn apply(&self, project_path: &Path) -> PeridotResult<()> {
+//!     fn apply(&self, _project_path: &Path) -> PeridotResult<()> {
 //!         // Generate files, modify existing code, etc.
 //!         Ok(())
 //!     }
@@ -217,7 +217,7 @@ pub trait Skill: Send + Sync + std::fmt::Debug {
     /// - Files cannot be written
     /// - Required dependencies cannot be added
     /// - Project structure is incompatible
-    fn apply(&self, project_path: &Path) -> PeridotResult<()> {
+    fn apply(&self, _project_path: &Path) -> PeridotResult<()> {
         // Default implementation returns an error
         // Real skills must override this
         Err(PeridotError::General(format!(

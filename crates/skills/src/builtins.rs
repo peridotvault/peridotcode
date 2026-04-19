@@ -295,7 +295,7 @@ impl Skill for DialogueSkill {
         ]
     }
 
-    fn conflicts_with(&self, other: &dyn Skill) -> bool {
+    fn conflicts_with(&self, _other: &dyn Skill) -> bool {
         // Dialogue doesn't conflict with inventory, but might conflict
         // with another dialogue system if we had alternative implementations
         false

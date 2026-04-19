@@ -223,11 +223,16 @@ impl Default for ProviderConfig {
 /// Recommended models for MVP (for quick reference)
 pub mod recommended {
     /// OpenRouter recommended models as (id, display_name) pairs
+    /// These models are verified to work and provide good results
     pub const OPENROUTER_MODELS: &[(&str, &str)] = &[
-        ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
-        ("openai/gpt-4o-mini", "GPT-4o Mini"),
-        ("anthropic/claude-3-haiku", "Claude 3 Haiku"),
-        ("google/gemini-flash-1.5", "Gemini Flash 1.5"),
+        (
+            "anthropic/claude-3.5-sonnet",
+            "Claude 3.5 Sonnet - Best overall",
+        ),
+        ("openai/gpt-4o", "GPT-4o - Great performance"),
+        ("openai/gpt-4o-mini", "GPT-4o Mini - Fast & cheap"),
+        ("anthropic/claude-3.5-haiku", "Claude 3.5 Haiku - Fast"),
+        ("anthropic/claude-3-opus", "Claude 3 Opus - Most powerful"),
     ];
 
     /// Get display name for a model ID

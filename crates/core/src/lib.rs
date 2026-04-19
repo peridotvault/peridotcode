@@ -46,13 +46,11 @@
 pub mod context;
 pub mod gateway_integration;
 pub mod intent;
+mod modification_engine;
 pub mod orchestrator;
 pub mod planner;
 
-// Deprecated module - will be removed in future release
-// Use gateway_integration instead
-#[deprecated(since = "0.1.0", note = "Use gateway_integration module instead")]
-pub mod inference;
+
 
 /// Convenience module for gateway integration
 ///
