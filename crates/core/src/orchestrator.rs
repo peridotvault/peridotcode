@@ -430,21 +430,42 @@ impl Orchestrator {
         }
 
         let system_prompt = r#"You are an intent classifier for a game development tool.
-Classify the user's request into exactly one of these categories:
-- "create_game" - User wants to create a new game
-- "add_feature" - User wants to add a feature to existing game
-- "modify" - User wants to modify existing code
-- "unknown" - Cannot determine intent
 
-Respond with ONLY the category name."#;
+IMPORTANT: Look at the user's request carefully to determine if they want to:
+
+1. "create_game" - ONLY if they explicitly say "create", "make", "build", or "new game"
+   Examples: "create a platformer", "make a new game", "build an RPG"
+
+2. "add_feature" - If they want to ADD something NEW to an existing project
+   Examples: "add jumping", "add a health bar", "implement shooting"
+
+3. "modify" - If they want to CHANGE, UPDATE, FIX, or TWEAK something EXISTING
+   Examples: "change background to black", "fix the jump height", "update player speed", "make enemies faster", "tweak the colors"
+   KEYWORD HINTS: change, fix, update, tweak, adjust, modify, edit, alter, improve, refactor
+
+4. "unknown" - If you cannot determine the intent
+
+CRITICAL: "change background to black" = "modify" (NOT create_game)
+CRITICAL: "fix the bug" = "modify" (NOT create_game)
+CRITICAL: "make it faster" = "modify" (NOT create_game unless they say "make a new game")
+
+Respond with ONLY one of these exact words: create_game, add_feature, modify, or unknown"#;
 
         match self.infer_with_system(&input.text, system_prompt).await {
             Ok((response, _status)) => {
-                let intent = match response.trim().to_lowercase().as_str() {
+                let response_trimmed = response.trim().to_lowercase();
+                let intent = match response_trimmed.as_str() {
                     "create_game" => Intent::CreateNewGame,
                     "add_feature" => Intent::AddFeature,
-                    _ => Intent::Unsupported,
+                    "modify" => Intent::ModifyCode,
+                    _ => {
+                        tracing::warn!("AI returned unrecognized intent: '{}', using keyword fallback", response_trimmed);
+                        // Use keyword-based classification as fallback
+                        return Err(format!("Unrecognized AI response: {}", response_trimmed));
+                    }
                 };
+
+                tracing::info!("AI classified intent as: {:?}", intent);
 
                 // Create a classification with high confidence for AI results
                 Ok(Classification {

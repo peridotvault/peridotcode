@@ -287,16 +287,41 @@ fn render_processing(app: &App) -> Text<'_> {
 /// Render results screen content
 fn render_results(app: &App) -> Text<'_> {
     let file_count = app.file_summary().len();
+
+    // Check if we have modifications (existing files changed) vs new files created
+    let has_modified_files = app.file_summary().iter().any(|f| f.contains("~"));
+    let has_new_files = app.file_summary().iter().any(|f| f.contains("+"));
+
+    let (title, description) = if has_modified_files && !has_new_files {
+        (
+            "✓ Changes applied successfully!",
+            format!("Modified {} file(s).", file_count),
+        )
+    } else if has_modified_files && has_new_files {
+        (
+            "✓ Project updated successfully!",
+            format!(
+                "Created {} new file(s) and modified existing files.",
+                file_count
+            ),
+        )
+    } else {
+        (
+            "✓ Project generated successfully!",
+            format!("Created {} file(s).", file_count),
+        )
+    };
+
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Project generated successfully!",
+            title,
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(format!("Created {} files.", file_count)),
+        Line::from(description),
         Line::from(""),
         Line::from("Next steps:"),
         Line::from("  1. Run: npm install"),
@@ -378,10 +403,7 @@ fn draw_error_modal(f: &mut Frame, state: &crate::overlays::ErrorModalState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(inner);
 
     let message = Paragraph::new(state.message.as_str())

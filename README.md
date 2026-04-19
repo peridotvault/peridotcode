@@ -102,12 +102,21 @@ npm run dev
 - `"Make a space shooter with power-ups"`
 - `"Build a puzzle game with tile matching"`
 
-### Editing Games
-- `"Add a health bar to the player"`
-- `"Make the enemies shoot projectiles"`
-- `"Add a pause menu"`
-- `"Fix the jumping physics to feel more natural"`
-- `"Add background music"`
+### Editing Games (OpenCode-Style)
+You can edit existing games by describing what you want to change:
+
+**Modification Keywords**: `change`, `fix`, `update`, `tweak`, `adjust`, `modify`, `edit`, `alter`, `improve`
+
+- `"change background to black"` - Changes existing code
+- `"fix the jumping physics"` - Fixes bugs in existing code  
+- `"update player speed to be faster"` - Updates existing values
+- `"add a health bar to the player"` - Adds new feature (uses "add")
+- `"make the enemies shoot projectiles"` - Adds new capability
+- `"add a pause menu"` - Adds new feature
+
+**Important**: The AI looks at your existing code and makes intelligent changes. You'll see:
+- "✓ Changes applied successfully!" - When existing files are modified
+- File changes marked with `~` for modifications, `+` for new files
 
 ## Commands
 

@@ -4,6 +4,17 @@ All notable changes to PeridotCode will be documented in this file.
 
 ## [1.0.0] - 2026-04-17 - Production Release
 
+### Fixed
+- **AI Classification Bug**: Fixed critical bug where "change background to black" and similar modification prompts were incorrectly classified as "Create New Game"
+  - Root cause: AI classifier was handling "create_game" and "add_feature" but NOT "modify" - causing all modification requests to fall through to `Unsupported`
+  - Solution: Added proper handling for "modify" intent in AI classifier
+  - Improved system prompt with clear examples distinguishing "create" vs "modify" intents
+  - Added detailed logging for AI classification decisions
+- **Results Screen Context Awareness**: Results screen now shows appropriate messages based on what was done
+  - Shows "Changes applied successfully!" for modifications
+  - Shows "Project updated successfully!" for mixed create+modify operations
+  - Shows "Project generated successfully!" for new creations
+
 ### Added
 - **OpenCode-Style Editing**: Full support for modifying existing game projects through natural language prompts
   - Smart context gathering: Automatically reads relevant project files to understand the codebase
