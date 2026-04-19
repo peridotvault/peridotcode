@@ -52,7 +52,7 @@ pub struct AnthropicClient {
     /// Request timeout
     timeout: Duration,
     /// API version
-    api_version: String,
+    _api_version: String,
 }
 
 impl AnthropicClient {
@@ -111,7 +111,7 @@ impl AnthropicClient {
             base_url,
             default_model,
             timeout: Duration::from_secs(60),
-            api_version: Self::API_VERSION.to_string(),
+            _api_version: Self::API_VERSION.to_string(),
         })
     }
 
@@ -165,13 +165,24 @@ impl AnthropicClient {
 
     /// Transform internal request to Anthropic format
     fn transform_request(&self, request: InferenceRequest) -> AnthropicRequest {
-        let model = if request.model.is_empty() {
+        let mut model = if request.model.is_empty() {
             self.default_model
                 .clone()
                 .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string())
         } else {
             request.model
         };
+
+        // Normalize model ID: strip "anthropic/" prefix if present
+        // This handles cases where the user is switching from OpenRouter to direct Anthropic
+        if model.starts_with("anthropic/") {
+            model = model.replacen("anthropic/", "", 1);
+        }
+
+        // Normalize dots to dashes for Claude 3.5 Sonnet if needed
+        if model == "claude-3.5-sonnet" {
+            model = "claude-3-5-sonnet-20240620".to_string();
+        }
 
         // Separate system message from other messages
         let mut system: Option<String> = None;
@@ -238,6 +249,14 @@ impl Provider for AnthropicClient {
 
     fn is_configured(&self) -> bool {
         !self.api_key.is_empty()
+    }
+
+    async fn validate_credentials(&self) -> GatewayResult<()> {
+        if self.api_key.is_empty() {
+            return Err(crate::GatewayError::CredentialError("Anthropic API key is empty".to_string()));
+        }
+        // Minimal validation - actual network check TODO
+        Ok(())
     }
 
     async fn infer(&self, request: InferenceRequest) -> GatewayResult<InferenceResponse> {
@@ -365,7 +384,7 @@ struct AnthropicContentBlock {
 /// Anthropic API response format
 #[derive(Debug, Deserialize)]
 struct AnthropicResponse {
-    id: String,
+    _id: String,
     model: String,
     content: Vec<AnthropicContentBlock>,
     #[serde(rename = "stop_reason")]
@@ -386,7 +405,7 @@ struct AnthropicUsage {
 struct AnthropicErrorResponse {
     error: AnthropicErrorDetail,
     #[serde(rename = "type")]
-    error_type: String,
+    _error_type: String,
 }
 
 #[derive(Debug, Deserialize)]

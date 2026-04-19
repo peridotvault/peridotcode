@@ -46,6 +46,7 @@
 pub mod context;
 pub mod gateway_integration;
 pub mod intent;
+mod modification_engine;
 pub mod orchestrator;
 pub mod planner;
 

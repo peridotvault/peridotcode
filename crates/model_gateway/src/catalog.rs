@@ -76,6 +76,53 @@ impl ModelCatalog {
 
         catalog
     }
+    
+    /// Create a catalog from models fetched from OpenRouter API
+    /// 
+    /// This ensures we only show models that are actually available
+    /// and accessible with the user's API key.
+    pub async fn from_openrouter_api(client: &crate::openrouter::OpenRouterClient) -> Self {
+        match client.fetch_available_models().await {
+            Ok(models) => {
+                let mut catalog = Self::new();
+                
+                for model_info in models {
+                    let context_window = model_info.context_window.unwrap_or(128_000);
+                    
+                    // Convert ModelInfo to ModelDescriptor
+                    let descriptor = ModelDescriptor {
+                        id: crate::model::ModelId::new(&model_info.id),
+                        name: model_info.name,
+                        provider: model_info.provider,
+                        capabilities: crate::model::ModelCapabilities::new(context_window)
+                            .with_capability(crate::model::ModelCapability::GameScaffolding)
+                            .with_capability(crate::model::ModelCapability::Code)
+                            .with_tier(if model_info.recommended {
+                                crate::model::ModelTier::Recommended
+                            } else {
+                                crate::model::ModelTier::Supported
+                            })
+                            .with_cost_tier_enum(crate::model::CostTier::Moderate),
+                        description: if model_info.recommended {
+                            Some("Verified working model".to_string())
+                        } else {
+                            None
+                        },
+                        version: None,
+                    };
+                    
+                    catalog.add(descriptor);
+                }
+                
+                tracing::info!("Created catalog with {} models from API", catalog.len());
+                catalog
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch models from API: {}. Using static list.", e);
+                Self::with_recommended()
+            }
+        }
+    }
 
     /// Create a catalog with only recommended models
     pub fn with_recommended_only() -> Self {
@@ -254,6 +301,53 @@ impl ModelCatalog {
     pub fn mvp_default(&self) -> Option<&ModelDescriptor> {
         let default_id = crate::model::recommended::mvp_default();
         self.get(&default_id)
+    }
+
+    /// Get models grouped by provider for display
+    ///
+    /// Returns a list of `(provider_label, models)` pairs sorted with
+    /// Recommended models first within each group.
+    pub fn grouped_by_provider(&self) -> Vec<(String, Vec<ModelDescriptor>)> {
+        let mut result: Vec<(String, Vec<ModelDescriptor>)> = Vec::new();
+
+        // Collect unique provider IDs preserving encounter order
+        let mut seen_providers: Vec<ProviderId> = Vec::new();
+        for id in self.models.keys() {
+            if let Some(model) = self.models.get(id) {
+                if !seen_providers.contains(&model.provider) {
+                    seen_providers.push(model.provider.clone());
+                }
+            }
+        }
+
+        // Sort providers so "openrouter" comes first
+        seen_providers.sort_by(|a, b| {
+            let a_score = if a.as_str() == "openrouter" { 0 } else { 1 };
+            let b_score = if b.as_str() == "openrouter" { 0 } else { 1 };
+            a_score.cmp(&b_score)
+        });
+
+        for provider in seen_providers {
+            let mut models = self.for_provider(&provider)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+
+            // Sort: Recommended first, then Supported, then Experimental
+            models.sort_by_key(|m| m.capabilities.tier);
+
+            let label = match provider.as_str() {
+                "openrouter" => "OpenRouter".to_string(),
+                "openai" => "OpenAI".to_string(),
+                "anthropic" => "Anthropic".to_string(),
+                "gemini" => "Google Gemini".to_string(),
+                other => other.to_string(),
+            };
+
+            result.push((label, models));
+        }
+
+        result
     }
 }
 

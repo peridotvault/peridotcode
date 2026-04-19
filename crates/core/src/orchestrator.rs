@@ -116,6 +116,8 @@ pub struct Orchestrator {
     gateway_client: Option<GatewayClient>,
     /// Configuration manager
     config_manager: Option<peridot_model_gateway::ConfigManager>,
+    /// Last error message for UI display (cleared after shown)
+    last_error: Option<String>,
 }
 
 /// Orchestrator Error
@@ -162,6 +164,7 @@ impl Orchestrator {
             template_engine,
             gateway_client: None,
             config_manager: None,
+            last_error: None,
         })
     }
 
@@ -207,6 +210,11 @@ impl Orchestrator {
     /// Check if AI inference is available
     pub fn has_ai(&self) -> bool {
         self.gateway_client.is_some()
+    }
+
+    /// Get and clear the last error message
+    pub fn take_last_error(&mut self) -> Option<String> {
+        self.last_error.take()
     }
 
     /// Get inference status for display
@@ -270,7 +278,7 @@ impl Orchestrator {
     /// Process a user prompt
     ///
     /// Main entry point: classifies, plans, executes
-    pub async fn process_prompt(&self, input: PromptInput) -> OrchestratorResult {
+    pub async fn process_prompt(&mut self, input: PromptInput) -> OrchestratorResult {
         tracing::info!("Processing prompt: {}", input.text);
 
         // Step 1: Classify
@@ -309,20 +317,48 @@ impl Orchestrator {
     /// This version uses the AI model to improve intent classification
     /// when AI is available. Falls back to keyword classification if
     /// AI classification fails or is not available.
-    pub async fn process_prompt_with_ai(&self, input: PromptInput) -> OrchestratorResult {
+    pub async fn process_prompt_with_ai(&mut self, input: PromptInput) -> OrchestratorResult {
         tracing::info!("Processing prompt with AI: {}", input.text);
+        
+        // Check if config manager exists
+        let has_config_manager = self.config_manager.is_some();
+        let has_gateway_client = self.gateway_client.is_some();
+        tracing::info!(
+            "Orchestrator state: has_config_manager={}, has_gateway_client={}, has_ai={}",
+            has_config_manager,
+            has_gateway_client,
+            self.has_ai()
+        );
 
         // Pre-flight credentials validation
         if let Some(config) = &self.config_manager {
-            if let Err(peridot_model_gateway::GatewayError::CredentialError(msg)) = config.validate_credentials() {
+            let validation_result = config.validate_credentials();
+            tracing::info!("Credential validation result: {:?}", validation_result.is_ok());
+            
+            if let Err(peridot_model_gateway::GatewayError::CredentialError(msg)) = validation_result {
+                tracing::error!("Credential validation failed: {}", msg);
                 return OrchestratorResult {
                     success: false,
                     intent: Intent::Unsupported,
                     plan: ExecutionPlan::new("error", "Validation failed", Intent::Unsupported),
                     execution_result: None,
-                    error: Some(OrchestratorError::MissingCredentials(msg)),
+                    error: Some(OrchestratorError::MissingCredentials(format!(
+                        "{}\n\nPlease run /connect to set up your API key again.",
+                        msg
+                    ))),
                 };
             }
+        } else {
+            tracing::error!("No config manager available!");
+            return OrchestratorResult {
+                success: false,
+                intent: Intent::Unsupported,
+                plan: ExecutionPlan::new("error", "No configuration", Intent::Unsupported),
+                execution_result: None,
+                error: Some(OrchestratorError::MissingCredentials(
+                    "No configuration manager available. Please run /connect to set up your provider.".to_string()
+                )),
+            };
         }
 
         // Step 1: Classify (with AI enhancement if available)
@@ -337,7 +373,23 @@ impl Orchestrator {
                     ai_classification
                 }
                 Err(e) => {
-                    tracing::warn!("AI classification failed, using keyword fallback: {}", e);
+                    // Check if it's a 404 model not found error
+                    let error_str = e.to_string();
+                    if error_str.contains("404") || error_str.contains("no endpoints found") {
+                        tracing::warn!("Model not available on provider (404). Using keyword fallback. Error: {}", e);
+                        // Show a user-friendly message about the model issue
+                        tracing::info!(
+                            "⚠ Model '{}' not available on OpenRouter. \
+                            The model may have been removed, renamed, or your API key doesn't have access. \
+                            Run /models to switch to a working model (suggested: anthropic/claude-3.5-sonnet or openai/gpt-4o-mini)",
+                            self.config_manager.as_ref()
+                                .and_then(|cm| cm.config().default_model.as_ref())
+                                .map(|m| m.as_str())
+                                .unwrap_or("unknown")
+                        );
+                    } else {
+                        tracing::warn!("AI classification failed, using keyword fallback: {}", e);
+                    }
                     self.classifier.classify(&input)
                 }
             }
@@ -408,7 +460,7 @@ Respond with ONLY the category name."#;
     /// Execute a plan
     ///
     /// TODO: Full implementation with progress tracking
-    async fn execute_plan(&self, plan: &ExecutionPlan) -> PeridotResult<ExecutionResult> {
+    async fn execute_plan(&mut self, plan: &ExecutionPlan) -> PeridotResult<ExecutionResult> {
         tracing::info!("Executing: {}", plan.description);
 
         let mut file_changes = Vec::new();
@@ -465,6 +517,72 @@ Respond with ONLY the category name."#;
                     tracing::info!("Message: {}", message);
                     completed_steps += 1;
                 }
+                Action::ModifyProject { prompt } => {
+                    tracing::info!("Applying AI modifications for: {}", prompt);
+                    
+                    // Gather source files for context
+                    tracing::debug!("Gathering codebase context...");
+                    let context_files = self.gather_source_context()?;
+                    tracing::info!("Gathered {} files for AI context", context_files.len());
+                    
+                    // Log files being sent to AI
+                    for (path, _) in &context_files {
+                        tracing::debug!("  - Including in context: {}", path.display());
+                    }
+                    
+                    let engine = crate::modification_engine::ModificationEngine::new();
+                    let ai_prompt = engine.build_prompt(prompt, &context_files);
+                    let system_prompt = engine.system_prompt();
+                    
+                    tracing::info!("Sending modification request to AI...");
+                    match self.infer_with_system(&ai_prompt, system_prompt).await {
+                        Ok((response_content, status)) => {
+                            // Extract token count if available
+                            let token_count = match &status {
+                                crate::gateway_integration::InferenceStatus::Success { usage, .. } => {
+                                    usage.as_ref().map(|u| u.total_tokens).unwrap_or(0)
+                                }
+                                _ => 0,
+                            };
+                            tracing::info!("AI response received ({} tokens)", token_count);
+                            
+                            let result = engine.parse_response(&response_content);
+                            
+                            // Log any explanation from AI
+                            if let Some(ref explanation) = result.explanation {
+                                tracing::info!("AI explanation: {}", explanation);
+                            }
+                            
+                            tracing::info!("AI suggested {} file modifications", result.modified_files.len());
+                            
+                            // Apply modifications
+                            for modification in result.modified_files {
+                                let path = &modification.path;
+                                let full_path = self.context.path().join(&path);
+                                let is_new = !full_path.exists();
+                                
+                                tracing::info!("Applying changes to: {} (new: {})", path.display(), is_new);
+                                
+                                let res = self.context.fs_engine_mut().write_file(&path, &modification.content)?;
+                                file_changes.push(peridot_template_engine::FileChange {
+                                    path: res.path,
+                                    change_type: if is_new {
+                                        peridot_template_engine::ChangeType::Created
+                                    } else {
+                                        peridot_template_engine::ChangeType::Modified
+                                    },
+                                });
+                            }
+                            
+                            change_summary = format!("Modified {} file(s) based on AI suggestions", file_changes.len());
+                            completed_steps += 1;
+                        }
+                        Err(e) => {
+                            tracing::error!("AI modification failed: {}", e);
+                            return Err(peridot_shared::PeridotError::new(format!("AI modification failed: {}", e)));
+                        }
+                    }
+                }
             }
         }
 
@@ -496,6 +614,53 @@ Respond with ONLY the category name."#;
     /// Check environment
     pub async fn check_environment(&self) -> PeridotResult<peridot_command_runner::EnvironmentStatus> {
         self.command_runner.check_environment().await
+    }
+
+    /// Gather source code files for context
+    fn gather_source_context(&self) -> PeridotResult<Vec<(PathBuf, String)>> {
+        let mut context_files = Vec::new();
+        let mut total_size = 0;
+        const MAX_TOTAL_CONTEXT_SIZE: usize = 150 * 1024; // 150KB limit for better context
+        
+        let engine = crate::modification_engine::ModificationEngine::new();
+        let files = self.context.list_files()?;
+        
+        tracing::debug!("Scanning {} files for context...", files.len());
+        
+        for path in files {
+            // Use engine's filtering logic
+            if !engine.should_include_file(&path) {
+                continue;
+            }
+            
+            let full_path = self.context.path().join(&path);
+            match peridot_fs_engine::read_file(&full_path) {
+                Ok(content) => {
+                    // Check if adding this file exceeds the limit
+                    if total_size + content.len() > MAX_TOTAL_CONTEXT_SIZE {
+                        tracing::warn!(
+                            "Skipping file {:?} for context: total size limit reached",
+                            path
+                        );
+                        continue;
+                    }
+                    
+                    total_size += content.len();
+                    context_files.push((path, content));
+                }
+                Err(e) => {
+                    tracing::debug!("Could not read file {:?}: {}", path, e);
+                }
+            }
+        }
+        
+        tracing::info!(
+            "Gathered {} files ({} KB) for AI context",
+            context_files.len(),
+            total_size / 1024
+        );
+        
+        Ok(context_files)
     }
 }
 
@@ -580,7 +745,7 @@ pub struct ExecutionResult {
 #[derive(Debug, Clone)]
 pub struct OrchestratorHandle {
     /// Cached orchestrator instance with AI support
-    orchestrator: std::sync::Arc<Option<Orchestrator>>,
+    orchestrator: std::sync::Arc<tokio::sync::Mutex<Option<Orchestrator>>>,
     /// Whether AI is available
     has_ai: bool,
 }
@@ -591,7 +756,7 @@ impl OrchestratorHandle {
     /// Initializes without AI. Call `initialize_with_ai()` to enable AI features.
     pub fn new() -> Self {
         Self {
-            orchestrator: std::sync::Arc::new(None),
+            orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             has_ai: false,
         }
     }
@@ -608,8 +773,8 @@ impl OrchestratorHandle {
                     "OrchestratorHandle initialized with AI support: {}",
                     has_ai
                 );
-                Self {
-                    orchestrator: std::sync::Arc::new(Some(orch)),
+                 Self {
+                    orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(Some(orch))),
                     has_ai,
                 }
             }
@@ -617,12 +782,12 @@ impl OrchestratorHandle {
                 tracing::warn!("Failed to initialize orchestrator with AI: {}", e);
                 // Try to create without AI
                 match Orchestrator::new(OrchestratorConfig::default()) {
-                    Ok(orch) => Self {
-                        orchestrator: std::sync::Arc::new(Some(orch)),
+                     Ok(orch) => Self {
+                        orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(Some(orch))),
                         has_ai: false,
                     },
                     Err(_) => Self {
-                        orchestrator: std::sync::Arc::new(None),
+                        orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
                         has_ai: false,
                     },
                 }
@@ -633,9 +798,37 @@ impl OrchestratorHandle {
     /// Initialize from an existing ConfigManager
     ///
     /// Used after setup flow completes to re-initialize with fresh credentials.
-    pub async fn new_with_client(config_manager: &peridot_model_gateway::ConfigManager) -> PeridotResult<Self> {
-        let _ = config_manager; // used to signal caller intent; actual init uses ::initialize_with_ai
-        Ok(Self::initialize_with_ai().await)
+    pub async fn new_with_client(config_manager: peridot_model_gateway::ConfigManager) -> PeridotResult<Self> {
+        tracing::info!("Initializing OrchestratorHandle with provided ConfigManager");
+        
+        // Create orchestrator using the provided config manager
+        let mut orchestrator = Orchestrator::new(OrchestratorConfig::default())?;
+        
+        // Create gateway client from the provided config manager
+        let client = GatewayClient::from_config_manager(&config_manager).await;
+        
+        let has_ai = client.is_ready();
+        tracing::info!("Gateway client ready: {}", has_ai);
+        
+        if has_ai {
+            orchestrator.gateway_client = Some(client);
+            orchestrator.config_manager = Some(config_manager);
+            tracing::info!(
+                "AI inference enabled with provider: {}, model: {:?}",
+                orchestrator.gateway_client.as_ref().unwrap().provider_name().unwrap_or("unknown"),
+                orchestrator.gateway_client.as_ref().unwrap().model_name()
+            );
+        } else {
+            let status = client.status();
+            tracing::warn!("AI inference not available: {}", status.display_message());
+            // Still store the config manager even if AI isn't ready
+            orchestrator.config_manager = Some(config_manager);
+        }
+
+        Ok(Self {
+            orchestrator: std::sync::Arc::new(tokio::sync::Mutex::new(Some(orchestrator))),
+            has_ai,
+        })
     }
 
     /// Check if AI is available
@@ -657,7 +850,8 @@ impl OrchestratorHandle {
     /// Uses AI-enhanced processing if available, otherwise falls back to
     /// keyword-based classification.
     pub async fn process_prompt(&self, prompt: &str) -> OrchestratorResult {
-        if let Some(ref orch) = *self.orchestrator {
+        let mut orch_lock = self.orchestrator.lock().await;
+        if let Some(ref mut orch) = *orch_lock {
             let input = PromptInput::new(prompt);
 
             // Use AI-enhanced processing if available
@@ -677,12 +871,10 @@ impl OrchestratorHandle {
         }
     }
 
-    /// Process a prompt and get AI response (for chat-like interactions)
-    ///
-    /// This sends the prompt directly to the AI model and returns the response.
-    /// Useful for getting AI feedback without executing a full plan.
+    /// Ask the AI a direct question
     pub async fn ask_ai(&self, prompt: &str) -> Result<String, String> {
-        if let Some(ref orch) = *self.orchestrator {
+        let mut orch_lock = self.orchestrator.lock().await;
+        if let Some(ref mut orch) = *orch_lock {
             if self.has_ai {
                 match orch.infer(prompt).await {
                     Ok((response, _status)) => Ok(response),
@@ -690,6 +882,20 @@ impl OrchestratorHandle {
                 }
             } else {
                 Err("AI not available. Configure a provider first.".to_string())
+            }
+        } else {
+            Err("Orchestrator not initialized".to_string())
+        }
+    }
+
+    /// Validates that the current provider supports network operations
+    pub async fn validate_network_support(&self) -> Result<(), String> {
+        let orch_lock = self.orchestrator.lock().await;
+        if let Some(ref orch) = *orch_lock {
+            if let Some(ref client) = orch.gateway_client {
+                client.validate_network().await
+            } else {
+                Err("Inference client not available".to_string())
             }
         } else {
             Err("Orchestrator not initialized".to_string())
@@ -711,7 +917,7 @@ pub async fn example_create_new_game() {
 
     // Create orchestrator
     let config = OrchestratorConfig::default();
-    let orchestrator = Orchestrator::new(config).expect("Failed to create orchestrator");
+    let mut orchestrator = Orchestrator::new(config).expect("Failed to create orchestrator");
 
     // Example prompt
     let prompt = PromptInput::new("make a 2D platformer with jumping");
@@ -982,9 +1188,10 @@ mod tests {
 
         let config_manager = ConfigManager::with_config(config);
 
-        let mut orchestrator = Orchestrator::new(OrchestratorConfig::default()).unwrap();
+        let mut orchestrator = Orchestrator::new(OrchestratorConfig::default()).expect("Failed to create orchestrator");
         orchestrator.config_manager = Some(config_manager);
-
+        
+        // This is a dummy example, we don't actually run network tasks in tests
         let result = orchestrator.process_prompt_with_ai(PromptInput::new("test")).await;
 
         assert!(!result.success);

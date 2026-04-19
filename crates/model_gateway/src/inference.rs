@@ -150,10 +150,10 @@ impl InferenceResponse {
     }
 }
 
-/// Token usage statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Statistics about token usage for an inference request
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UsageStats {
-    /// Prompt tokens consumed
+    /// Number of tokens in the prompt
     pub prompt_tokens: u32,
     /// Completion tokens generated
     pub completion_tokens: u32,

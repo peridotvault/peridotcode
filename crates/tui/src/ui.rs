@@ -12,16 +12,9 @@ use ratatui::{
 };
 
 use crate::app::{App, AppState};
-use crate::setup::{SetupState, SetupStep};
-
+use crate::overlays::{ApiKeyStatus, OverlayState};
 /// Draw the full UI with all panels
 pub fn draw(f: &mut Frame, app: &mut App) {
-    // Check if in setup flow
-    if let Some(ref setup) = app.setup_state() {
-        draw_setup(f, setup);
-        return;
-    }
-
     // Create main layout: content area + status bar
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -52,353 +45,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Draw status bar
     draw_status_bar(f, app, main_chunks[1]);
+
+    // Draw overlay on top (if any)
+    draw_overlay(f, app);
 }
 
-/// Draw setup flow UI
-fn draw_setup(f: &mut Frame, setup: &SetupState) {
-    let area = f.area();
-
-    // Clear screen and draw centered setup UI
-    let setup_area = centered_rect(80, 80, area);
-
-    let block = Block::default()
-        .title(format!(" Setup - {} ", setup.step.title()))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    f.render_widget(Clear, setup_area);
-
-    match setup.step {
-        SetupStep::Welcome => draw_setup_welcome(f, setup, setup_area, block),
-        SetupStep::SelectProvider => draw_setup_provider(f, setup, setup_area, block),
-        SetupStep::EnterApiKey => draw_setup_api_key(f, setup, setup_area, block),
-        SetupStep::SelectModel => draw_setup_model(f, setup, setup_area, block),
-        SetupStep::Validating => draw_setup_validating(f, setup, setup_area, block),
-        SetupStep::Complete => draw_setup_complete(f, setup, setup_area, block),
-        SetupStep::Error => draw_setup_error(f, setup, setup_area, block),
-        SetupStep::None => {}
-    }
-}
-
-/// Draw welcome setup screen
-fn draw_setup_welcome(f: &mut Frame, _setup: &SetupState, area: Rect, block: Block) {
-    let text = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "Welcome to PeridotCode!",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from("PeridotCode helps you build game prototypes from natural language prompts."),
-        Line::from(""),
-        Line::from("To get started, you'll need to configure an AI provider."),
-        Line::from("We recommend OpenRouter for access to multiple AI models."),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press Enter to continue or 'q' to quit.",
-            Style::default().fg(Color::Yellow),
-        )),
-    ]);
-
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .wrap(Wrap { trim: true })
-        .alignment(Alignment::Center);
-
-    f.render_widget(paragraph, area);
-}
-
-/// Draw provider selection screen
-fn draw_setup_provider(f: &mut Frame, setup: &SetupState, area: Rect, block: Block) {
-    let inner_area = area.inner(Margin::new(2, 2));
-
-    // Help text
-    let help_text = Text::from(vec![Line::from("Select an AI provider:"), Line::from("")]);
-
-    let help_paragraph = Paragraph::new(help_text);
-    f.render_widget(help_paragraph, inner_area);
-
-    // Provider list
-    let items: Vec<ListItem> = setup
-        .provider_options
-        .iter()
-        .enumerate()
-        .map(|(i, provider)| {
-            let style = if i == setup.selection_index {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let recommended = if provider.recommended {
-                " ✓ Recommended"
-            } else {
-                ""
-            };
-
-            let content = format!(
-                "{} - {}{}",
-                provider.name, provider.description, recommended
-            );
-            ListItem::new(content).style(style)
-        })
-        .collect();
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-    let list_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y + 2,
-        width: inner_area.width,
-        height: inner_area.height.saturating_sub(4),
-    };
-
-    f.render_widget(list, list_area);
-
-    // Instructions
-    let instructions = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "↑/↓ to select, Enter to confirm, 'q' to quit",
-            Style::default().fg(Color::Yellow),
-        )),
-    ]);
-
-    let instr_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y + inner_area.height.saturating_sub(2),
-        width: inner_area.width,
-        height: 2,
-    };
-
-    f.render_widget(Paragraph::new(instructions), instr_area);
-}
-
-/// Draw API key input screen
-fn draw_setup_api_key(f: &mut Frame, setup: &SetupState, area: Rect, block: Block) {
-    let inner_area = area.inner(Margin::new(2, 2));
-
-    let provider = setup.selected_provider.as_ref().unwrap();
-
-    let mut text_lines = vec![
-        Line::from(format!("Enter your {} API key:", provider.name)),
-        Line::from(""),
-    ];
-
-    if setup.use_env_var {
-        text_lines.push(Line::from(vec![
-            Span::from("Using environment variable: "),
-            Span::styled(
-                &provider.env_var,
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        text_lines.push(Line::from("Make sure this environment variable is set."));
-        text_lines.push(Line::from(""));
-        text_lines.push(Line::from(Span::styled(
-            "Press 'e' to toggle direct key entry",
-            Style::default().fg(Color::Yellow),
-        )));
-    } else {
-        let key_display = if setup.api_key_input.is_empty() {
-            "_".to_string()
-        } else {
-            "*".repeat(setup.api_key_input.len())
-        };
-
-        text_lines.push(Line::from(vec![
-            Span::from("API Key: "),
-            Span::styled(key_display, Style::default().fg(Color::Green)),
-        ]));
-        text_lines.push(Line::from(""));
-        text_lines.push(Line::from(Span::styled(
-            "Type your key or press 'e' to use environment variable",
-            Style::default().fg(Color::Yellow),
-        )));
-    }
-
-    text_lines.push(Line::from(""));
-    text_lines.push(Line::from(Span::styled(
-        "Press Enter to continue, Esc to go back",
-        Style::default().fg(Color::Yellow),
-    )));
-
-    let text = Text::from(text_lines);
-
-    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-
-    f.render_widget(paragraph, inner_area);
-}
-
-/// Draw model selection screen
-fn draw_setup_model(f: &mut Frame, setup: &SetupState, area: Rect, block: Block) {
-    let inner_area = area.inner(Margin::new(2, 2));
-
-    // Help text
-    let help_text = Text::from(vec![
-        Line::from("Select your default model:"),
-        Line::from(""),
-    ]);
-
-    let help_paragraph = Paragraph::new(help_text);
-    f.render_widget(help_paragraph, inner_area);
-
-    // Model list
-    let items: Vec<ListItem> = setup
-        .model_options
-        .iter()
-        .enumerate()
-        .map(|(i, model)| {
-            let style = if i == setup.selection_index {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let recommended = if model.recommended {
-                " ✓ Recommended"
-            } else {
-                ""
-            };
-
-            let content = format!(
-                "{} - {} (Context: {}){}",
-                model.name, model.description, model.context_window, recommended
-            );
-            ListItem::new(content).style(style)
-        })
-        .collect();
-
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-    let list_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y + 2,
-        width: inner_area.width,
-        height: inner_area.height.saturating_sub(4),
-    };
-
-    f.render_widget(list, list_area);
-
-    // Instructions
-    let instructions = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "↑/↓ to select, Enter to confirm, Esc to go back",
-            Style::default().fg(Color::Yellow),
-        )),
-    ]);
-
-    let instr_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y + inner_area.height.saturating_sub(2),
-        width: inner_area.width,
-        height: 2,
-    };
-
-    f.render_widget(Paragraph::new(instructions), instr_area);
-}
-
-/// Draw validation screen
-fn draw_setup_validating(f: &mut Frame, _setup: &SetupState, area: Rect, block: Block) {
-    let text = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "Validating configuration...",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from("Testing your API key and saving configuration."),
-        Line::from("This will only take a moment."),
-    ]);
-
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .alignment(Alignment::Center);
-
-    f.render_widget(paragraph, area);
-}
-
-/// Draw setup complete screen
-fn draw_setup_complete(f: &mut Frame, setup: &SetupState, area: Rect, block: Block) {
-    let provider = setup.selected_provider.as_ref().unwrap();
-    let model = setup.selected_model.as_ref().unwrap();
-
-    let text = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "✓ Setup Complete!",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(format!("Provider: {}", provider.name)),
-        Line::from(format!("Model: {}", model.name)),
-        Line::from(""),
-        Line::from("Your configuration has been saved."),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press Enter to start using PeridotCode!",
-            Style::default().fg(Color::Yellow),
-        )),
-    ]);
-
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .alignment(Alignment::Center);
-
-    f.render_widget(paragraph, area);
-}
-
-/// Draw setup error screen
-fn draw_setup_error(f: &mut Frame, setup: &SetupState, area: Rect, block: Block) {
-    let error_msg = setup
-        .error_message
-        .as_deref()
-        .unwrap_or("An unknown error occurred");
-
-    let text = Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "✗ Setup Error",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(error_msg),
-        Line::from(""),
-        Line::from("Please check your API key and try again."),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press Enter or Esc to go back",
-            Style::default().fg(Color::Yellow),
-        )),
-    ]);
-
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .alignment(Alignment::Center);
-
-    f.render_widget(paragraph, area);
-}
-
-/// Draw the main content panel (welcome, input, processing, or results)
+/// Draw main content panel
 fn draw_main_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(" PeridotCode ")
@@ -410,7 +62,6 @@ fn draw_main_panel(f: &mut Frame, app: &App, area: Rect) {
         AppState::Input => render_input(app),
         AppState::Processing => render_processing(app),
         AppState::Results => render_results(app),
-        AppState::Setup => Text::from("Setup in progress..."),
     };
 
     let paragraph = Paragraph::new(content)
@@ -435,14 +86,28 @@ fn draw_main_panel(f: &mut Frame, app: &App, area: Rect) {
 /// Draw the task log panel
 fn draw_task_log_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
-        .title(" Task Log ")
+        .title(" Task Log (Click to select, double-click to copy) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
+    let selected_index = app.selected_log_index();
     let items: Vec<ListItem> = app
         .task_log()
         .iter()
-        .map(|msg| ListItem::new(msg.as_str()))
+        .enumerate()
+        .map(|(idx, msg)| {
+            let mut item = ListItem::new(msg.as_str());
+            // Highlight selected item
+            if selected_index == Some(idx) {
+                item = item.style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            item
+        })
         .collect();
 
     let list = List::new(items).block(block);
@@ -453,20 +118,32 @@ fn draw_task_log_panel(f: &mut Frame, app: &App, area: Rect) {
 /// Draw the file summary panel
 fn draw_file_summary_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
-        .title(" Files ")
+        .title(" Files (Click to select, double-click to copy) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
 
+    let selected_index = app.selected_file_index();
     let items: Vec<ListItem> = app
         .file_summary()
         .iter()
-        .map(|file| {
+        .enumerate()
+        .map(|(idx, file)| {
             let content = if file.starts_with("No ") {
                 file.clone()
             } else {
                 format!("  {}", file)
             };
-            ListItem::new(content)
+            let mut item = ListItem::new(content);
+            // Highlight selected item
+            if selected_index == Some(idx) {
+                item = item.style(
+                    Style::default()
+                        .fg(Color::Green)
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            item
         })
         .collect();
 
@@ -576,7 +253,7 @@ fn render_input(app: &App) -> Text<'_> {
     )));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Press Enter to submit, Esc to cancel",
+        "Press Enter to submit, Esc to cancel, Ctrl+V to paste",
         Style::default().fg(Color::Yellow),
     )));
 
@@ -610,8 +287,7 @@ fn render_processing(app: &App) -> Text<'_> {
 /// Render results screen content
 fn render_results(app: &App) -> Text<'_> {
     let file_count = app.file_summary().len();
-
-    Text::from(vec![
+    let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             "Project generated successfully!",
@@ -626,8 +302,28 @@ fn render_results(app: &App) -> Text<'_> {
         Line::from("  1. Run: npm install"),
         Line::from("  2. Run: npm run dev"),
         Line::from(""),
-        Line::from("Press 'n' for a new prompt, 'q' to quit."),
-    ])
+    ];
+
+    // Show copy feedback if recent
+    if let Some(copied) = app.last_copied_content() {
+        lines.push(Line::from(vec![
+            Span::styled("✓ Copied to clipboard: ", Style::default().fg(Color::Green)),
+            Span::styled(
+                &copied[..copied.len().min(50)],
+                Style::default().fg(Color::Cyan),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from("Press 'n' for new prompt, 'q' to quit."));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Shortcuts: Ctrl+C=copy last, Ctrl+Shift+A=copy all, Esc/q=quit",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    Text::from(lines)
 }
 
 /// Create a centered rect
@@ -649,4 +345,305 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Overlay rendering
+// ─────────────────────────────────────────────────────────────────
+
+/// Dispatch to the correct overlay renderer
+fn draw_overlay(f: &mut Frame, app: &App) {
+    match app.overlay() {
+        OverlayState::None => {}
+        OverlayState::ProviderPicker(state) => draw_provider_picker_overlay(f, state),
+        OverlayState::ApiKeyInput(state) => draw_api_key_input_overlay(f, state),
+        OverlayState::ModelPicker(state) => draw_model_picker_overlay(f, state),
+        OverlayState::ErrorModal(state) => draw_error_modal(f, state),
+    }
+}
+
+fn draw_error_modal(f: &mut Frame, state: &crate::overlays::ErrorModalState) {
+    let area = centered_rect(50, 30, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .title(format!(" {} ", state.title))
+        .title_alignment(Alignment::Center);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let message = Paragraph::new(state.message.as_str())
+        .wrap(Wrap { trim: true })
+        .alignment(Alignment::Center);
+
+    f.render_widget(message, chunks[0]);
+
+    f.render_widget(
+        Paragraph::new("Press Esc or Enter to close")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::ProviderPickerState) {
+    let area = centered_rect(60, 50, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Connect a Provider ")
+        .title_alignment(Alignment::Center);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let items: Vec<ListItem> = state
+        .providers
+        .iter()
+        .enumerate()
+        .map(|(i, opt)| {
+            let prefix = if i == state.cursor { "▶ " } else { "  " };
+            let label = if opt.enabled {
+                format!("{}{}", prefix, opt.label)
+            } else {
+                format!("{}{}  [coming soon]", prefix, opt.label)
+            };
+            let style = if i == state.cursor && opt.enabled {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else if !opt.enabled {
+                Style::default().fg(Color::DarkGray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let desc_style = Style::default().fg(Color::DarkGray);
+            ListItem::new(vec![
+                Line::from(Span::styled(label, style)),
+                Line::from(Span::styled(
+                    format!("     {}", opt.description),
+                    desc_style,
+                )),
+            ])
+        })
+        .collect();
+
+    let list = List::new(items);
+    let help_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(inner);
+
+    f.render_widget(list, help_area[0]);
+    f.render_widget(
+        Paragraph::new("↑↓ navigate   Enter select   Esc cancel")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        help_area[1],
+    );
+}
+
+fn draw_api_key_input_overlay(f: &mut Frame, state: &crate::overlays::ApiKeyInputState) {
+    let area = centered_rect(60, 40, f.area());
+    f.render_widget(Clear, area);
+
+    let (border_color, title) = match &state.status {
+        ApiKeyStatus::Validating => (
+            Color::Yellow,
+            format!(" {} — Validating... ", state.provider_label),
+        ),
+        ApiKeyStatus::Valid => (
+            Color::Green,
+            format!(" {} — Connected! ✓ ", state.provider_label),
+        ),
+        ApiKeyStatus::Invalid(_) => (
+            Color::Red,
+            format!(" {} — Invalid Key ", state.provider_label),
+        ),
+        ApiKeyStatus::Idle => (
+            Color::Cyan,
+            format!(" {} — Enter API Key ", state.provider_label),
+        ),
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .title(title)
+        .title_alignment(Alignment::Center);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    // Key URL hint
+    f.render_widget(
+        Paragraph::new(format!("Get your key: {}", state.key_url))
+            .style(Style::default().fg(Color::DarkGray)),
+        chunks[0],
+    );
+
+    // Key input field
+    let masked = state.masked_display();
+    let is_empty = masked.is_empty();
+    let display = if is_empty {
+        "Enter your API key...".to_string()
+    } else {
+        masked
+    };
+    let key_style = if is_empty {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    let key_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    f.render_widget(
+        Paragraph::new(display).style(key_style).block(key_block),
+        chunks[1],
+    );
+
+    // Status message
+    let status_text = match &state.status {
+        ApiKeyStatus::Idle => "".to_string(),
+        ApiKeyStatus::Validating => "⣾ Validating with provider...".to_string(),
+        ApiKeyStatus::Valid => "✓ Key validated and saved!".to_string(),
+        ApiKeyStatus::Invalid(e) => format!("✗ {}", e),
+    };
+    let status_color = match &state.status {
+        ApiKeyStatus::Valid => Color::Green,
+        ApiKeyStatus::Invalid(_) => Color::Red,
+        ApiKeyStatus::Validating => Color::Yellow,
+        ApiKeyStatus::Idle => Color::DarkGray,
+    };
+    f.render_widget(
+        Paragraph::new(status_text).style(Style::default().fg(status_color)),
+        chunks[2],
+    );
+
+    // Help
+    f.render_widget(
+        Paragraph::new("Enter submit | Esc back | Ctrl+V paste | (key is masked for safety)")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[4],
+    );
+}
+
+fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPickerState) {
+    let area = centered_rect(70, 75, f.area());
+    f.render_widget(Clear, area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Select Model ")
+        .title_alignment(Alignment::Center);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(inner);
+
+    // Build flat list of items, counting cursor
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut flat_pos = 0usize;
+
+    // Apply filter
+    let filter = state.filter.to_lowercase();
+
+    for (group_label, entries) in &state.groups {
+        // Section header
+        items.push(ListItem::new(Line::from(vec![Span::styled(
+            format!(" ─── {} ", group_label),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )])));
+
+        for entry in entries {
+            // Skip if filter active and doesn't match
+            if !filter.is_empty()
+                && !entry.display_name.to_lowercase().contains(&filter)
+                && !entry.model_id.to_lowercase().contains(&filter)
+            {
+                flat_pos += 1;
+                continue;
+            }
+
+            let is_selected = flat_pos == state.cursor;
+            let (prefix, row_style) = if is_selected {
+                (
+                    "▶",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                (" ", Style::default().fg(Color::White))
+            };
+
+            let active_marker = if entry.is_active { " [active]" } else { "" };
+            let tier_style = match entry.tier_symbol.as_str() {
+                "★" => Style::default().fg(Color::Yellow),
+                "✓" => Style::default().fg(Color::Green),
+                _ => Style::default().fg(Color::DarkGray),
+            };
+
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!(" {} ", prefix), row_style),
+                Span::styled(entry.tier_symbol.clone(), tier_style),
+                Span::styled(format!(" {}", entry.display_name), row_style),
+                Span::styled(
+                    format!("  {}{}", entry.cost_hint, active_marker),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])));
+
+            flat_pos += 1;
+        }
+    }
+
+    f.render_widget(List::new(items), chunks[0]);
+
+    let help = if state.filter_active {
+        format!("Filter: {}  Esc clear", state.filter)
+    } else {
+        "↑↓ navigate   Enter select   / filter   Esc close".to_string()
+    };
+    f.render_widget(
+        Paragraph::new(help)
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
 }

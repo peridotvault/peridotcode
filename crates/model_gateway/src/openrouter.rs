@@ -229,6 +229,53 @@ impl OpenRouterClient {
     }
 
     /// Fetch available models from OpenRouter API
+    /// 
+    /// This method queries the OpenRouter API for all available models
+    /// and returns them as a list. This ensures we only show models
+    /// that are actually accessible.
+    pub async fn fetch_available_models(&self) -> GatewayResult<Vec<ModelInfo>> {
+        let models = self.fetch_models().await?;
+        
+        // Convert OpenRouter models to our ModelInfo format
+        // Filter for models we know work well for game scaffolding
+        let recommended_ids: std::collections::HashSet<&str> = RECOMMENDED_MODELS.iter().cloned().collect();
+        
+        let model_infos: Vec<ModelInfo> = models
+            .into_iter()
+            .filter_map(|m| {
+                let id = m.id.clone();
+                let is_recommended = recommended_ids.contains(id.as_str());
+                
+                // Only include models in our recommended list or well-known providers
+                let provider_prefix = id.split('/').next()?;
+                let is_known_provider = matches!(provider_prefix, 
+                    "anthropic" | "openai" | "google" | "meta" | "mistral"
+                );
+                
+                if !is_recommended && !is_known_provider {
+                    return None;
+                }
+                
+                Some(ModelInfo {
+                    id: m.id.clone(),
+                    name: m.name.unwrap_or_else(|| m.id.clone()),
+                    provider: ProviderId::openrouter(),
+                    context_window: Some(m.context_length),
+                    recommended: is_recommended,
+                })
+            })
+            .collect();
+        
+        if model_infos.is_empty() {
+            tracing::warn!("No models returned from API, falling back to static list");
+            return Ok(static_model_list());
+        }
+        
+        tracing::info!("Fetched {} models from OpenRouter API", model_infos.len());
+        Ok(model_infos)
+    }
+    
+    /// Internal method to fetch raw models from API
     async fn fetch_models(&self) -> GatewayResult<Vec<OpenRouterModel>> {
         let url = self.models_endpoint();
 
@@ -394,6 +441,44 @@ impl Provider for OpenRouterClient {
             }
         }
     }
+
+    async fn validate_credentials(&self) -> GatewayResult<()> {
+        let url = format!("{}/auth/key", self.base_url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .headers(self.build_request_headers())
+            .send()
+            .await
+            .map_err(|e| GatewayError::ProviderError {
+                provider: "openrouter".to_string(),
+                message: format!("Network error during validation: {}", e),
+            })?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            
+            // Try to parse as OpenRouter error response
+            if let Ok(error_data) = serde_json::from_str::<OpenRouterErrorResponse>(&text) {
+                return Err(GatewayError::CredentialError(format!(
+                    "Invalid API key ({}): {}",
+                    error_data.error.code, error_data.error.message
+                )));
+            }
+
+            Err(GatewayError::CredentialError(format!(
+                "API key validation failed with status {}: {}",
+                status, text
+            )))
+        }
+    }
 }
 
 /// OpenRouter API request format
@@ -443,7 +528,8 @@ impl From<OpenRouterMessage> for Message {
 /// OpenRouter API response format
 #[derive(Debug, Deserialize)]
 struct OpenRouterResponse {
-    id: String,
+    #[serde(rename = "id")]
+    _id: String,
     model: String,
     choices: Vec<OpenRouterChoice>,
     usage: Option<OpenRouterUsage>,
@@ -453,7 +539,8 @@ struct OpenRouterResponse {
 struct OpenRouterChoice {
     message: OpenRouterMessage,
     finish_reason: Option<String>,
-    index: u32,
+    #[serde(rename = "index")]
+    _index: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -474,7 +561,7 @@ struct OpenRouterErrorDetail {
     code: u32,
     message: String,
     #[serde(rename = "type")]
-    error_type: Option<String>,
+    _error_type: Option<String>,
 }
 
 /// OpenRouter model information
@@ -483,13 +570,13 @@ struct OpenRouterModel {
     id: String,
     name: Option<String>,
     context_length: usize,
-    pricing: Option<OpenRouterPricing>,
+    _pricing: Option<OpenRouterPricing>,
 }
 
 #[derive(Debug, Deserialize)]
 struct OpenRouterPricing {
-    prompt: f64,
-    completion: f64,
+    _prompt: f64,
+    _completion: f64,
 }
 
 /// OpenRouter models list response
@@ -499,44 +586,61 @@ struct OpenRouterModelsResponse {
 }
 
 /// List of recommended OpenRouter models for game scaffolding
+/// These are models known to work well for code generation tasks
 const RECOMMENDED_MODELS: &[&str] = &[
     "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3.5-sonnet:beta",
     "anthropic/claude-3-opus",
     "openai/gpt-4o",
     "openai/gpt-4o-mini",
     "anthropic/claude-3-haiku",
-    "google/gemini-flash-1.5",
+    "anthropic/claude-3.5-haiku",
 ];
 
 /// Get static model list as fallback when API is unavailable
+/// These are well-tested models known to work on OpenRouter
 fn static_model_list() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
             id: "anthropic/claude-3.5-sonnet".to_string(),
-            name: "Claude 3.5 Sonnet".to_string(),
+            name: "Claude 3.5 Sonnet (Recommended)".to_string(),
             provider: ProviderId::openrouter(),
             context_window: Some(200_000),
             recommended: true,
         },
         ModelInfo {
-            id: "openai/gpt-4o-mini".to_string(),
-            name: "GPT-4o Mini".to_string(),
+            id: "anthropic/claude-3.5-sonnet:beta".to_string(),
+            name: "Claude 3.5 Sonnet Beta".to_string(),
+            provider: ProviderId::openrouter(),
+            context_window: Some(200_000),
+            recommended: true,
+        },
+        ModelInfo {
+            id: "openai/gpt-4o".to_string(),
+            name: "GPT-4o".to_string(),
             provider: ProviderId::openrouter(),
             context_window: Some(128_000),
             recommended: true,
         },
         ModelInfo {
-            id: "anthropic/claude-3-haiku".to_string(),
-            name: "Claude 3 Haiku".to_string(),
+            id: "openai/gpt-4o-mini".to_string(),
+            name: "GPT-4o Mini (Fast & Cheap)".to_string(),
+            provider: ProviderId::openrouter(),
+            context_window: Some(128_000),
+            recommended: true,
+        },
+        ModelInfo {
+            id: "anthropic/claude-3.5-haiku".to_string(),
+            name: "Claude 3.5 Haiku (Fast)".to_string(),
             provider: ProviderId::openrouter(),
             context_window: Some(200_000),
             recommended: true,
         },
         ModelInfo {
-            id: "google/gemini-flash-1.5".to_string(),
-            name: "Gemini Flash 1.5".to_string(),
+            id: "anthropic/claude-3-opus".to_string(),
+            name: "Claude 3 Opus (Powerful)".to_string(),
             provider: ProviderId::openrouter(),
-            context_window: Some(1_000_000),
+            context_window: Some(200_000),
             recommended: true,
         },
     ]
@@ -682,6 +786,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_validate_credentials_success() {
+        use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
+        let mock_server = MockServer::start().await;
+        
+        Mock::given(matchers::method("GET"))
+            .and(matchers::path("/auth/key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "label": "test-key" }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = OpenRouterClient::with_config(
+            "test-key",
+            Some(mock_server.uri()),
+            None,
+        ).unwrap();
+
+        let result = client.validate_credentials().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_validate_credentials_failure() {
+        use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
+        let mock_server = MockServer::start().await;
+        
+        Mock::given(matchers::method("GET"))
+            .and(matchers::path("/auth/key"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": {
+                    "code": 401,
+                    "message": "Invalid API key"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = OpenRouterClient::with_config(
+            "invalid-key",
+            Some(mock_server.uri()),
+            None,
+        ).unwrap();
+
+        let result = client.validate_credentials().await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            crate::GatewayError::CredentialError(msg) => {
+                assert!(msg.contains("Invalid API key"));
+            }
+            _ => panic!("Expected CredentialError"),
+        }
+    }
+
+    #[tokio::test]
     async fn test_infer_retry_success() {
         use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
         
@@ -698,9 +857,15 @@ mod tests {
                 "choices": [
                     {
                         "message": { "role": "assistant", "content": "Success!" },
-                        "index": 0
+                        "index": 0,
+                        "finish_reason": "stop"
                     }
-                ]
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15
+                }
             }));
 
         // Use sequential logic for wiremock
@@ -726,7 +891,7 @@ mod tests {
         let request = InferenceRequest::new("default-model").with_user("Hi");
         let result = client.infer(request).await;
 
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Expected success but got error: {:?}", result);
         let msg = result.unwrap().message;
         assert_eq!(msg.content, "Success!");
     }

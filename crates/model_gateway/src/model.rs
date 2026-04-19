@@ -434,6 +434,19 @@ pub mod recommended {
             .with_tier(ModelTier::Recommended)
             .with_cost_tier(CostTier::Moderate)
             .with_recommendation_reason("Best overall: excellent quality at reasonable cost")
+            .with_tag("balanced")
+            .with_tag("latest"),
+            // ★ Secondary variant for Claude 3.5 Sonnet (dashes)
+            ModelDescriptor::new(
+                "anthropic/claude-3-5-sonnet",
+                "Claude 3.5 Sonnet (Alt)",
+                super::super::ProviderId::openrouter(),
+                200_000,
+            )
+            .with_description("Alternative slug for Claude 3.5 Sonnet")
+            .with_capability(ModelCapability::GameScaffolding)
+            .with_tier(ModelTier::Supported)
+            .with_cost_tier(CostTier::Moderate)
             .with_tag("balanced"),
             // ★ Cost-effective option
             ModelDescriptor::new(
@@ -463,21 +476,20 @@ pub mod recommended {
             .with_cost_tier(CostTier::Low)
             .with_recommendation_reason("Best for rapid prototyping and quick iterations")
             .with_tag("fast"),
-            // ★ Large context option
+            // ★ Newer fast option
             ModelDescriptor::new(
-                "google/gemini-flash-1.5",
-                "Gemini Flash 1.5",
+                "anthropic/claude-3.5-haiku",
+                "Claude 3.5 Haiku",
                 super::super::ProviderId::openrouter(),
-                1_000_000,
+                200_000,
             )
-            .with_description("Very large context window, good for complex templates")
+            .with_description("Latest fast Claude model with improved capabilities")
             .with_capability(ModelCapability::GameScaffolding)
             .with_capability(ModelCapability::Code)
-            .with_capability(ModelCapability::Vision)
             .with_tier(ModelTier::Recommended)
             .with_cost_tier(CostTier::Low)
-            .with_recommendation_reason("Best for large projects: 1M token context window")
-            .with_tag("large-context"),
+            .with_recommendation_reason("Best speed/value ratio for most tasks")
+            .with_tag("fast"),
         ]
     }
 
@@ -566,6 +578,7 @@ pub mod recommended {
 
     /// Get default model for MVP
     pub fn mvp_default() -> ModelId {
+        // Use the most standard OpenRouter slug for MVP
         ModelId::new("anthropic/claude-3.5-sonnet")
     }
 

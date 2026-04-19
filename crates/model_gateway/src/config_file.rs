@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Manages configuration loading and persistence
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConfigManager {
     /// Loaded configuration
     config: GatewayConfig,
@@ -131,6 +131,36 @@ impl ConfigManager {
         &mut self.config
     }
 
+    /// Switch the active model
+    pub fn set_model(&mut self, model: crate::ModelId) {
+        self.config.default_model = Some(model);
+    }
+
+    /// Save a provider API key (adds or updates the provider config)
+    pub fn set_provider_key(&mut self, provider_id: crate::ProviderId, api_key: impl Into<String>) {
+        self.config.set_provider(
+            provider_id.clone(),
+            crate::ProviderConfig::with_api_key(api_key),
+        );
+        
+        // If the current default provider is None OR if the current default
+        // is not configured/ready, switch it to this newly configured one.
+        // This ensures a better initial UX when the user connects their first provider.
+        let default_should_switch = self.config.default_provider.as_ref()
+            .map(|p| !self.is_provider_ready(p))
+            .unwrap_or(true);
+
+        if default_should_switch {
+            tracing::info!("Setting default provider to {}", provider_id);
+            self.config.default_provider = Some(provider_id);
+        }
+    }
+
+    /// Set the default provider
+    pub fn set_default_provider(&mut self, provider_id: crate::ProviderId) {
+        self.config.default_provider = Some(provider_id);
+    }
+
     /// Get configuration status for UI display
     ///
     /// Returns a summary of what's configured.
@@ -139,9 +169,7 @@ impl ConfigManager {
             has_provider: self.config.default_provider.is_some()
                 || !self.config.providers.is_empty(),
             provider_ready: self.config.default_provider.as_ref().map_or(false, |p| {
-                self.config
-                    .get_provider(p)
-                    .map_or(false, |cfg| cfg.is_valid())
+                self.is_provider_ready(p)
             }),
             has_model: self.config.default_model.is_some(),
             provider_name: self.config.default_provider.as_ref().map(|p| p.to_string()),
@@ -191,7 +219,34 @@ impl ConfigManager {
             crate::GatewayError::ConfigError(format!("Failed to write config file: {}", e))
         })?;
 
+        // Set strict permissions (600) on Unix-like systems
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+
         Ok(())
+    }
+
+    /// Check if a specific provider is configured and ready
+    pub fn is_provider_ready(&self, provider_id: &crate::ProviderId) -> bool {
+        self.config.get_provider(provider_id).map_or(false, |cfg| {
+            if !cfg.is_valid() {
+                return false;
+            }
+            
+            // Also verify the credential can be resolved
+            if let Some(ref key_ref) = cfg.api_key {
+                self.credential_resolver.can_resolve(key_ref)
+            } else {
+                false
+            }
+        })
     }
 
     /// Resolve credentials for a provider
@@ -669,3 +724,4 @@ pub mod interactive {
         }
     }
 }
+

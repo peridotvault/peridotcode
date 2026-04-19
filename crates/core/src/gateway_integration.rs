@@ -176,7 +176,7 @@ pub struct GatewayClient {
     /// Current configuration status
     config_status: ConfigStatus,
     /// Provider ID
-    provider_id: Option<ProviderId>,
+    _provider_id: Option<ProviderId>,
     /// Model ID
     model_id: Option<String>,
 }
@@ -193,7 +193,7 @@ impl GatewayClient {
                 provider_name: None,
                 model_name: None,
             },
-            provider_id: None,
+            _provider_id: None,
             model_id: None,
         }
     }
@@ -210,7 +210,7 @@ impl GatewayClient {
             return Self {
                 provider: None,
                 config_status,
-                provider_id: None,
+                _provider_id: None,
                 model_id: None,
             };
         }
@@ -233,7 +233,7 @@ impl GatewayClient {
         Self {
             provider,
             config_status,
-            provider_id: Some(provider_id),
+            _provider_id: Some(provider_id),
             model_id,
         }
     }
@@ -380,6 +380,13 @@ impl GatewayClient {
 
         match result {
             Ok(response) => {
+                // Record usage persistence
+                if let Some(ref usage) = response.usage {
+                    let mut tracker = peridot_model_gateway::UsageTracker::load_default();
+                    tracker.record_usage(&model_name, usage.clone());
+                    let _ = tracker.save_default();
+                }
+
                 let usage = response.usage.as_ref().map(UsageInfo::from);
                 let status = InferenceStatus::Success {
                     provider: provider_name,
@@ -417,7 +424,15 @@ impl GatewayClient {
                 false,
             ),
             GatewayError::ProviderError { message, .. } => {
-                (format!("Provider error: {}", message), false)
+                let mut display_msg = format!("Provider error: {}", message);
+                
+                // Add specific guidance for common errors like 404 (No endpoints found)
+                if message.contains("404") || message.to_lowercase().contains("not found") {
+                    display_msg.push_str("\n\nGuidance: This usually means the model ID is incorrect for your chosen provider. \
+                        If you recently switched providers, try re-selecting your model in the settings (/models).");
+                }
+                
+                (display_msg, false)
             }
             GatewayError::InferenceError(msg) => (msg.clone(), false),
             GatewayError::ValidationError(msg) => (format!("Invalid request: {}", msg), false),
@@ -433,6 +448,15 @@ impl GatewayClient {
     /// Get model name for display
     pub fn model_name(&self) -> Option<&str> {
         self.config_status.model_name.as_deref()
+    }
+
+    /// Perform a network-based validation of the current credentials
+    pub async fn validate_network(&self) -> Result<(), String> {
+        let provider = self.provider.as_ref().ok_or_else(|| {
+            "No AI provider initialized. Please check your configuration.".to_string()
+        })?;
+
+        provider.validate_credentials().await.map_err(|e| e.to_string())
     }
 }
 

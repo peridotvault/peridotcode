@@ -4,11 +4,16 @@ This document lists the main known gaps and limitations after implementing the e
 
 ## Resolved Gaps
 
-- **API Key Error Handling**: Added `validate_credentials` pre-flight check in the orchestrator that intercepts missing keys and shows users a clean error in the TUI advising them to check their `.env`.
+- **API Key Error Handling**: Added `validate_credentials` pre-flight check and real-time network validation during setup.
+- **Request Cancellation**: Users can now stop in-flight inference using `Esc` or `Ctrl+C`.
+- **Transient Error Recovery**: Exponential backoff retry implemented for OpenRouter (1s, 2s, 4s).
+- **Integration Testing**: Comprehensive test suite using `wiremock` for core pipeline validation.
+- **Observability**: Token usage is now persisted to `usage.json` for tracking costs/utilization.
+- **Security**: Config file permissions are restricted to `600` on Unix systems.
 
 ## Critical Gaps (Should Address Soon)
 
-### 1. No Real Error Recovery
+### 1. Limited Intent Classification
 
 **Current State**: Errors are caught and displayed but not retried
 

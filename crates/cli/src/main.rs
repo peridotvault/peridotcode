@@ -14,7 +14,7 @@ use tracing_subscriber::FmtSubscriber;
 #[derive(Parser, Debug)]
 #[command(name = "peridotcode")]
 #[command(about = "Terminal-first AI game creation agent")]
-#[command(version = "0.1.0")]
+#[command(version = "1.0.0")]
 struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]

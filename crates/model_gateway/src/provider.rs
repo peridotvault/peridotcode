@@ -147,6 +147,12 @@ pub trait Provider: Send + Sync + std::fmt::Debug {
     /// - Handle errors appropriately
     async fn infer(&self, request: InferenceRequest) -> GatewayResult<InferenceResponse>;
 
+    /// Validate that the provider can be reached and credentials are valid
+    ///
+    /// This should perform a minimal non-destructive request (like listing models
+    /// or checking auth status) to ensure the API key works.
+    async fn validate_credentials(&self) -> GatewayResult<()>;
+
     /// List available models from this provider
     ///
     /// This is optional for MVP - can return a static list if the provider
@@ -341,6 +347,10 @@ impl Provider for PlaceholderProvider {
     }
 
     async fn infer(&self, _request: InferenceRequest) -> GatewayResult<InferenceResponse> {
+        Err(GatewayError::ProviderNotAvailable(self.id.to_string()))
+    }
+
+    async fn validate_credentials(&self) -> GatewayResult<()> {
         Err(GatewayError::ProviderNotAvailable(self.id.to_string()))
     }
 
