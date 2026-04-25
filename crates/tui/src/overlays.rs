@@ -73,7 +73,12 @@ impl ProviderPickerState {
                 ProviderOption::available(
                     "openrouter",
                     "OpenRouter",
-                    "Access 200+ models from one API key  ★ Recommended",
+                    "Access 200+ models one API key  ★ Recommended",
+                ),
+                ProviderOption::available(
+                    "groq",
+                    "Groq",
+                    "Ultra-fast inference  ⚡ Free credits",
                 ),
                 ProviderOption::coming_soon("anthropic", "Anthropic (Direct)"),
                 ProviderOption::coming_soon("openai", "OpenAI / ChatGPT"),
@@ -139,6 +144,7 @@ impl ApiKeyInputState {
     pub fn with_key(id: &str, label: &str, key: String) -> Self {
         let key_url = match id {
             "openrouter" => "https://openrouter.ai/keys",
+            "groq"       => "https://console.groq.com/keys",
             "anthropic"  => "https://console.anthropic.com/keys",
             "openai"     => "https://platform.openai.com/api-keys",
             _            => "See your provider's dashboard",
