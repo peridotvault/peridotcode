@@ -362,6 +362,13 @@ const RECOMMENDED_MODELS: &[&str] = &[
 pub fn static_model_list() -> Vec<ModelInfo> {
     vec![
         ModelInfo {
+            id: "groq/compound".to_string(),
+            name: "Groq Compound".to_string(),
+            provider: ProviderId::groq(),
+            context_window: Some(128_000),
+            recommended: true,
+        },
+        ModelInfo {
             id: "llama-3.1-70b-versatile".to_string(),
             name: "Llama 3.1 70B Versatile".to_string(),
             provider: ProviderId::groq(),

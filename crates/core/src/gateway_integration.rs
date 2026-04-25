@@ -291,6 +291,18 @@ impl GatewayClient {
                     }
                 }
             }
+            "groq" => {
+                match peridot_model_gateway::create_groq_client(config_manager).await {
+                    Ok(client) => {
+                        tracing::info!("Groq client created successfully");
+                        Some(Box::new(client))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create Groq client: {}", e);
+                        None
+                    }
+                }
+            }
             _ => {
                 tracing::warn!("Unsupported provider: {}", provider_id);
                 None

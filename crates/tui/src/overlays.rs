@@ -257,7 +257,7 @@ impl ModelPickerState {
             groups.push((label.clone(), entries));
         }
 
-        // Position cursor on the active model if any
+        // Position cursor on the last item (or active model if any)
         let cursor = flat.iter().enumerate()
             .find(|(_, &enc)| {
                 let g = enc / 1000;
@@ -268,7 +268,7 @@ impl ModelPickerState {
                     .unwrap_or(false)
             })
             .map(|(i, _)| i)
-            .unwrap_or(0);
+            .unwrap_or(flat.len().saturating_sub(1));
 
         let _ = flat_idx; // suppress warning
         Self { groups, flat, cursor, filter: String::new(), filter_active: false }
