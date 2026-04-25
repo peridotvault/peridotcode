@@ -394,7 +394,8 @@ async fn list_providers(show_all: bool) -> anyhow::Result<()> {
         // Show all supported providers
         println!("Available providers:");
         let providers = vec![
-            ("openrouter", "OpenRouter", "Access multiple AI models through one API (recommended)", true),
+            ("openrouter", "OpenRouter", "Access multiple AI models through one API", false),
+            ("groq", "Groq", "Fast Llama models (recommended)", true),
             ("openai", "OpenAI", "Direct OpenAI API access", false),
             ("anthropic", "Anthropic", "Direct Anthropic Claude API access", false),
             ("gemini", "Google Gemini", "Google Gemini API access", false),
@@ -497,7 +498,7 @@ async fn add_provider(
     let provider_id = ProviderId::new(provider);
 
     // Check if this is a supported provider
-    let supported_providers = vec!["openrouter", "openai", "anthropic", "gemini"];
+    let supported_providers = vec!["openrouter", "groq", "openai", "anthropic", "gemini"];
     if !supported_providers.contains(&provider) {
         println!("Warning: '{}' is not a built-in supported provider.", provider);
         println!("Supported providers: {}", supported_providers.join(", "));
@@ -539,6 +540,14 @@ async fn add_provider(
         provider_config.base_url = Some("https://openrouter.ai/api/v1".to_string());
         if provider_config.default_model.is_none() {
             provider_config.default_model = Some("anthropic/claude-3.5-sonnet".to_string());
+        }
+    }
+
+    // Set provider-specific defaults for Groq
+    if provider == "groq" && provider_config.base_url.is_none() {
+        provider_config.base_url = Some("https://api.groq.com/openai/v1".to_string());
+        if provider_config.default_model.is_none() {
+            provider_config.default_model = Some("llama-3.1-70b-versatile".to_string());
         }
     }
 
