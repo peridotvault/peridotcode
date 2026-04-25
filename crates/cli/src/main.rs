@@ -43,6 +43,12 @@ enum Commands {
     /// Run inference example (requires configured provider)
     Infer,
 
+    /// Run agent test with prompt
+    Agent {
+        /// Prompt to send to the agent
+        prompt: String,
+    },
+
     /// Manage AI providers
     #[command(subcommand)]
     Provider(ProviderCommands),
@@ -145,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Doctor) => run_doctor().await?,
         Some(Commands::Example) => run_example().await?,
         Some(Commands::Infer) => run_infer().await?,
+        Some(Commands::Agent { prompt }) => run_agent(prompt).await?,
         Some(Commands::Provider(cmd)) => run_provider_command(cmd).await?,
         Some(Commands::Model(cmd)) => run_model_command(cmd).await?,
         Some(Commands::Init { name }) => run_init(name).await?,
@@ -224,6 +231,109 @@ async fn run_example() -> anyhow::Result<()> {
 /// Run inference example flow
 async fn run_infer() -> anyhow::Result<()> {
     peridot_core::example_inference_flow().await;
+    Ok(())
+}
+
+/// Run agent test with prompt
+async fn run_agent(prompt: String) -> anyhow::Result<()> {
+    use peridot_core::agent_loop::{AgentConfig, AgentLoop, ResponseParser, StructuredResponse};
+    use peridot_core::gateway_integration::GatewayClient;
+
+    println!("Agent Test");
+    println!("=========");
+    println!();
+    println!("Prompt: {}", prompt);
+    println!();
+
+    // Load config
+    let config_manager = match peridot_model_gateway::ConfigManager::initialize() {
+        Ok(cm) => cm,
+        Err(e) => {
+            println!("Error: Could not load configuration: {}", e);
+            println!();
+            println!("Run 'peridotcode provider add openrouter --api-key <key>' first.");
+            return Ok(());
+        }
+    };
+
+    let status = config_manager.config_status();
+    if !status.is_ready() {
+        println!("AI Provider not configured.");
+        println!();
+        println!("Current status:");
+        if !status.has_provider {
+            println!("  - No provider configured");
+        }
+        if !status.provider_ready {
+            println!("  - Provider missing API key");
+        }
+        if !status.has_model {
+            println!("  - No model selected");
+        }
+        println!();
+        println!("Run 'peridotcode provider add openrouter --api-key <key>' first.");
+        return Ok(());
+    }
+
+    println!("Provider: {} / {}", 
+        status.provider_name.as_deref().unwrap_or("unknown"),
+        status.model_name.as_deref().unwrap_or("unknown")
+    );
+    println!();
+
+    // Create gateway client
+    let gateway_client = GatewayClient::from_config_manager(&config_manager).await;
+
+    if !gateway_client.is_ready() {
+        println!("Error: Could not create gateway client.");
+        return Ok(());
+    }
+
+    // Create agent
+    let agent_config = AgentConfig::default();
+    let mut agent = AgentLoop::new(agent_config, gateway_client);
+
+    println!("Sending to LLM...");
+    println!();
+
+    // Process prompt
+    let result = agent.process(&prompt).await;
+
+    if let Some(error) = result.error {
+        println!("Error: {}", error);
+        return Ok(());
+    }
+
+    // Show raw response
+    println!("Raw Response:");
+    println!("----------");
+    println!("{}", result.response);
+    println!();
+
+    // Try to parse structured response
+    println!("Parsed Response:");
+    println!("---------------");
+    match ResponseParser::parse(&result.response) {
+        Ok(structured) => {
+            println!("Action: {}", structured.action);
+            println!("Summary: {}", structured.summary);
+            if let Some(ref msg) = structured.message {
+                println!("Message: {}", msg);
+            }
+            if let Some(ref params) = structured.params {
+                println!("Params: {}", params);
+            }
+        }
+        Err(_) => {
+            println!("(Could not parse as structured JSON, showing raw response above)");
+        }
+    }
+
+    if let Some(usage) = result.usage {
+        println!();
+        println!("Tokens used: {}", usage);
+    }
+
     Ok(())
 }
 

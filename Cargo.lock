@@ -1257,6 +1257,7 @@ dependencies = [
  "peridot-skills",
  "peridot-template-engine",
  "regex",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

@@ -922,6 +922,24 @@ impl OrchestratorHandle {
             Err("Orchestrator not initialized".to_string())
         }
     }
+
+    /// Create an AgentLoop from this handle
+    ///
+    /// This provides conversational AI capability using the configured
+    /// provider. Returns None if AI is not configured.
+    pub async fn to_agent_loop(&self) -> Option<crate::agent_loop::AgentLoop> {
+        let orch_lock = self.orchestrator.lock().await;
+        if let Some(ref orch) = *orch_lock {
+            if let Some(client) = orch.gateway_client() {
+                let config = crate::agent_loop::AgentConfig::default();
+                Some(crate::agent_loop::AgentLoop::new(config, client.clone()))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for OrchestratorHandle {
