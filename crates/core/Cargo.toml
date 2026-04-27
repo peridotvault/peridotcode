@@ -10,7 +10,6 @@ description = "Orchestration, planning, and project context for PeridotCode"
 [dependencies]
 peridot-shared = { workspace = true }
 peridot-fs-engine = { workspace = true }
-peridot-template-engine = { workspace = true }
 peridot-command-runner = { workspace = true }
 peridot-skills = { workspace = true }
 peridot-model-gateway = { workspace = true }

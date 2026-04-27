@@ -44,12 +44,14 @@
 #![warn(missing_docs)]
 
 pub mod agent_loop;
+pub mod code_template;
 pub mod context;
 pub mod gateway_integration;
 pub mod intent;
 mod modification_engine;
 pub mod orchestrator;
 pub mod planner;
+pub mod unified_context;
 
 
 
@@ -75,8 +77,8 @@ pub use orchestrator::{
 };
 pub use planner::{Action, ExecutionPlan, Planner, Step, StepStatus};
 
-// Re-export template engine types used by orchestrator
-pub use peridot_template_engine::{ChangeType, FileChange};
+// Re-export fs_engine types used by orchestrator
+pub use peridot_fs_engine::{ChangeType, FileChange};
 
 // Re-export model_gateway types for convenience
 pub use peridot_model_gateway::{
@@ -88,4 +90,21 @@ pub use peridot_model_gateway::{
 pub use agent_loop::{
     AgentConfig, AgentError, AgentLoop, AgentMessage, AgentResult, AgentState, AgentTool,
     MessageRole, ToolRegistry,
+};
+
+// Re-export unified context types
+pub use unified_context::{
+    conversation::{ConversationMemory, ConversationTurn},
+    file_loader::{FileInput, FileInputLoader, FileType},
+    input_parser::{Entity, EntityType, InputFlags, InputParser, ParsedInput},
+    prompt_builder::{
+        BuiltPrompt, ContextMerger, OutputFormat, PromptBuilder, SystemPromptTemplate,
+    },
+    ProjectContextInfo, UnifiedContext,
+};
+
+// Re-export code template types
+pub use code_template::{
+    CodeTemplate, CodeTemplateRegistry, ExtensionPoint, GameEngine, GenerationResult,
+    ScaffoldGenerator, TemplateMetadata,
 };

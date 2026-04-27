@@ -124,10 +124,17 @@ pub mod manifest;
 #[doc(hidden)]
 pub mod orchestrator_example;
 pub mod registry;
+pub mod tools;
 
 pub use builtins::{DialogueSkill, InventorySkill, SaveSystemSkill};
 pub use manifest::{SkillDependency, SkillManifest, SkillVersion};
 pub use registry::{SkillId, SkillMetadata, SkillRegistry};
+pub use tools::{
+    dispatcher::{ToolCall, ToolCallResult, ToolDispatcher, ModelGatewayClient},
+    modify_code::{modify_code, LlmClient, LlmContext, ModifyCodeParams, ModifyCodeResult, ModifyCodeTool},
+    read_file::{read_file_tool, ReadFileParams, ReadFileResult, ReadFileTool},
+    Tool, ToolContext, ToolRegistry, ToolResult,
+};
 
 use peridot_shared::{PeridotError, PeridotResult};
 use std::path::Path;

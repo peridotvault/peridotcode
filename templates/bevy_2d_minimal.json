@@ -1,0 +1,45 @@
+{
+  "template_name": "bevy_2d_minimal",
+  "engine": "bevy",
+  "description": "A minimal 2D game using Bevy engine with ECS architecture",
+  "features": [
+    "ecs",
+    "2d_rendering",
+    "player_input",
+    "movement"
+  ],
+  "dependencies": {
+    "bevy": "0.13"
+  },
+  "files": {
+    "Cargo.toml": "[package]\nname = \"{{project_name_snake}}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nbevy = \"0.13\"\n\n# Enable optimizations for dependencies in dev mode\n[profile.dev.package.\"*\"]\nopt-level = 3\n",
+    "src/main.rs": "use bevy::prelude::*;\n\nmod player;\n\nuse player::{PlayerPlugin, Player};\n\nfn main() {\n    App::new()\n        .add_plugins(DefaultPlugins)\n        .add_plugins(PlayerPlugin)\n        .add_systems(Startup, setup)\n        .add_systems(Update, bevy::window::close_on_esc)\n        .run();\n}\n\nfn setup(mut commands: Commands) {\n    // Camera\n    commands.spawn(Camera2dBundle::default());\n    \n    // Ground\n    commands.spawn(SpriteBundle {\n        sprite: Sprite {\n            color: Color::rgb(0.4, 0.8, 0.4),\n            custom_size: Some(Vec2::new(800.0, 100.0)),\n            ..default()\n        },\n        transform: Transform::from_xyz(0.0, -250.0, 0.0),\n        ..default()\n    });\n    \n    info!(\"{{project_name}} initialized!\");\n}",
+    "src/player.rs": "use bevy::prelude::*;\n\npub struct PlayerPlugin;\n\nimpl Plugin for PlayerPlugin {\n    fn build(&self, app: &mut App) {\n        app.add_systems(Startup, spawn_player)\n           .add_systems(Update, player_movement);\n    }\n}\n\n#[derive(Component)]\npub struct Player {\n    pub speed: f32,\n}\n\nfn spawn_player(mut commands: Commands) {\n    commands.spawn((\n        SpriteBundle {\n            sprite: Sprite {\n                color: Color::rgb(0.9, 0.2, 0.2),\n                custom_size: Some(Vec2::new(50.0, 50.0)),\n                ..default()\n            },\n            transform: Transform::from_xyz(0.0, 0.0, 0.0),\n            ..default()\n        },\n        Player { speed: 300.0 },\n    ));\n}\n\nfn player_movement(\n    mut query: Query<(&Player, &mut Transform)>,\n    input: Res<ButtonInput<KeyCode>>,\n    time: Res<Time>,\n) {\n    let (player, mut transform) = query.single_mut();\n    \n    let mut direction = Vec2::ZERO;\n    \n    if input.pressed(KeyCode::ArrowLeft) || input.pressed(KeyCode::KeyA) {\n        direction.x -= 1.0;\n    }\n    if input.pressed(KeyCode::ArrowRight) || input.pressed(KeyCode::KeyD) {\n        direction.x += 1.0;\n    }\n    if input.pressed(KeyCode::ArrowUp) || input.pressed(KeyCode::KeyW) {\n        direction.y += 1.0;\n    }\n    if input.pressed(KeyCode::ArrowDown) || input.pressed(KeyCode::KeyS) {\n        direction.y -= 1.0;\n    }\n    \n    if direction != Vec2::ZERO {\n        direction = direction.normalize();\n        transform.translation += direction.extend(0.0) * player.speed * time.delta_seconds();\n    }\n}",
+    "README.md": "# {{project_name}}\n\n{{description}}\n\n## Features\n- Bevy ECS architecture\n- 2D sprite rendering\n- Keyboard input handling\n- Player movement system\n\n## Controls\n- WASD or Arrow Keys: Move\n- ESC: Quit\n\n## Running\n### Development\n```bash\ncargo run\n```\n\n### Release (optimized)\n```bash\ncargo run --release\n```\n\n## Project Structure\n```\nsrc/\n├── main.rs      # App setup and systems\n└── player.rs    # Player plugin and systems\n```\n\n## ECS Overview\n\n- **Entities**: Objects in the game (player, enemies, items)\n- **Components**: Data attached to entities (Player, Transform, Sprite)\n- **Systems**: Logic that operates on entities with specific components\n\n## Extension Points\n\n### Add Physics\nUse `bevy_rapier2d` for collision detection and physics.\n\n### Add Animation\nUse `SpriteSheetBundle` and `TextureAtlas` for animations.\n\n### Add Audio\nUse `AudioBundle` and `AudioSource` for sound effects.\n"
+  },
+  "placeholders": {
+    "project_name": "My Bevy Game",
+    "description": "A simple 2D game using Bevy engine"
+  },
+  "extension_points": [
+    {
+      "name": "add_physics",
+      "description": "Add collision detection with bevy_rapier2d",
+      "files_to_modify": ["Cargo.toml", "src/main.rs"],
+      "suggested_code": "// Add rapier dependency and collision systems"
+    },
+    {
+      "name": "add_camera_follow",
+      "description": "Make camera follow the player",
+      "files_to_modify": ["src/player.rs"],
+      "suggested_code": "// Camera follow system"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "author": "PeridotCode",
+    "tags": ["2d", "bevy", "ecs", "rust", "beginner"],
+    "complexity": 3,
+    "setup_time_minutes": 5
+  }
+}

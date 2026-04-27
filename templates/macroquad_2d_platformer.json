@@ -1,0 +1,56 @@
+{
+  "template_name": "macroquad_2d_platformer",
+  "engine": "macroquad",
+  "description": "A minimal 2D platformer using Macroquad with physics, jumping, and collision detection",
+  "features": [
+    "physics",
+    "gravity",
+    "jump",
+    "collision",
+    "platform",
+    "player_controller"
+  ],
+  "dependencies": {
+    "macroquad": "0.4"
+  },
+  "files": {
+    "Cargo.toml": "[package]\nname = \"{{project_name_snake}}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nmacroquad = \"0.4\"\n",
+    "src/main.rs": "use macroquad::prelude::*;\n\nmod player;\nmod physics;\nmod world;\n\nuse player::Player;\nuse world::World;\n\n#[macroquad::main(\"{{project_name}}\")]\nasync fn main() {\n    println!(\"Starting {{project_name}}...\");\n    \n    let mut world = World::new();\n    let mut player = Player::new(100.0, 100.0);\n    \n    loop {\n        clear_background(SKYBLUE);\n        \n        // Update\n        let dt = get_frame_time();\n        player.update(dt, &world);\n        \n        // Draw\n        world.draw();\n        player.draw();\n        \n        // Instructions\n        draw_text(\"Arrow keys to move, Space to jump\", 10.0, 20.0, 20.0, BLACK);\n        \n        next_frame().await\n    }\n}",
+    "src/player.rs": "use macroquad::prelude::*;\nuse crate::physics::PhysicsBody;\nuse crate::world::World;\n\npub struct Player {\n    pub physics: PhysicsBody,\n    pub speed: f32,\n    pub jump_force: f32,\n    pub on_ground: bool,\n}\n\nimpl Player {\n    pub fn new(x: f32, y: f32) -> Self {\n        Self {\n            physics: PhysicsBody::new(x, y, 32.0, 32.0),\n            speed: 200.0,\n            jump_force: 400.0,\n            on_ground: false,\n        }\n    }\n\n    pub fn update(&mut self, dt: f32, world: &World) {\n        // Input\n        if is_key_down(KeyCode::Left) {\n            self.physics.velocity.x = -self.speed;\n        } else if is_key_down(KeyCode::Right) {\n            self.physics.velocity.x = self.speed;\n        } else {\n            self.physics.velocity.x = 0.0;\n        }\n\n        // Jump\n        if is_key_pressed(KeyCode::Space) && self.on_ground {\n            self.physics.velocity.y = -self.jump_force;\n            self.on_ground = false;\n        }\n\n        // Apply gravity\n        self.physics.apply_gravity(dt);\n\n        // Update position\n        self.physics.update(dt);\n\n        // Collision with world\n        self.on_ground = false;\n        for platform in world.get_platforms() {\n            if self.physics.rect.intersect(platform) {\n                // Simple collision resolution\n                if self.physics.velocity.y > 0.0 {\n                    self.physics.rect.y = platform.y - self.physics.rect.h;\n                    self.physics.velocity.y = 0.0;\n                    self.on_ground = true;\n                }\n            }\n        }\n\n        // Screen boundaries\n        self.physics.rect.x = self.physics.rect.x.clamp(0.0, screen_width() - self.physics.rect.w);\n    }\n\n    pub fn draw(&self) {\n        draw_rectangle(\n            self.physics.rect.x,\n            self.physics.rect.y,\n            self.physics.rect.w,\n            self.physics.rect.h,\n            RED,\n        );\n    }\n}",
+    "src/physics.rs": "use macroquad::prelude::*;\n\npub struct PhysicsBody {\n    pub rect: Rect,\n    pub velocity: Vec2,\n    pub gravity: f32,\n}\n\nimpl PhysicsBody {\n    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Self {\n        Self {\n            rect: Rect::new(x, y, w, h),\n            velocity: Vec2::new(0.0, 0.0),\n            gravity: 800.0,\n        }\n    }\n\n    pub fn apply_gravity(&mut self, dt: f32) {\n        self.velocity.y += self.gravity * dt;\n    }\n\n    pub fn update(&mut self, dt: f32) {\n        self.rect.x += self.velocity.x * dt;\n        self.rect.y += self.velocity.y * dt;\n    }\n}",
+    "src/world.rs": "use macroquad::prelude::*;\n\npub struct World {\n    platforms: Vec<Rect>,\n}\n\nimpl World {\n    pub fn new() -> Self {\n        let mut platforms = Vec::new();\n        \n        // Ground\n        platforms.push(Rect::new(0.0, 500.0, 800.0, 100.0));\n        \n        // Some platforms\n        platforms.push(Rect::new(200.0, 400.0, 150.0, 20.0));\n        platforms.push(Rect::new(450.0, 300.0, 150.0, 20.0));\n        platforms.push(Rect::new(100.0, 200.0, 100.0, 20.0));\n        \n        Self { platforms }\n    }\n\n    pub fn get_platforms(&self) -> &Vec<Rect> {\n        &self.platforms\n    }\n\n    pub fn draw(&self) {\n        for platform in &self.platforms {\n            draw_rectangle(platform.x, platform.y, platform.w, platform.h, GREEN);\n        }\n    }\n}",
+    "README.md": "# {{project_name}}\n\n{{description}}\n\n## Features\n- 2D platformer physics\n- Gravity and jumping\n- Collision detection\n- Player controller\n\n## Controls\n- Left/Right Arrow: Move\n- Space: Jump\n\n## Running\n```bash\ncargo run\n```\n\n## Extension Points\n- Add enemies\n- Add collectibles\n- Add level progression\n- Add animations\n"
+  },
+  "placeholders": {
+    "project_name": "My Platformer",
+    "description": "A simple 2D platformer game"
+  },
+  "extension_points": [
+    {
+      "name": "add_enemy",
+      "description": "Add enemy entities that patrol platforms",
+      "files_to_modify": ["src/main.rs", "src/world.rs"],
+      "suggested_code": "// Enemy struct and update logic",
+      "insertion_point": "after:Player"
+    },
+    {
+      "name": "add_collectibles",
+      "description": "Add coins or items to collect",
+      "files_to_modify": ["src/main.rs", "src/world.rs"],
+      "suggested_code": "// Collectible item struct and collision detection"
+    },
+    {
+      "name": "add_double_jump",
+      "description": "Allow player to jump twice before landing",
+      "files_to_modify": ["src/player.rs"],
+      "suggested_code": "// Track jump count and allow second jump"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "author": "PeridotCode",
+    "tags": ["2d", "platformer", "beginner", "physics"],
+    "complexity": 2,
+    "setup_time_minutes": 5
+  }
+}

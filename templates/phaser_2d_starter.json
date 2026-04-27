@@ -1,0 +1,54 @@
+{
+  "template_name": "phaser_2d_starter",
+  "engine": "phaser",
+  "description": "A minimal HTML5 2D game starter using Phaser 3 with a basic scene and player",
+  "features": [
+    "scene_management",
+    "sprite_rendering",
+    "keyboard_input",
+    "basic_physics"
+  ],
+  "dependencies": {
+    "phaser": "^3.70.0"
+  },
+  "files": {
+    "package.json": "{\n  \"name\": \"{{project_name_snake}}\",\n  \"version\": \"0.1.0\",\n  \"description\": \"{{description}}\",\n  \"main\": \"index.html\",\n  \"scripts\": {\n    \"dev\": \"npx serve .\",\n    \"build\": \"echo 'No build step required'\"\n  },\n  \"dependencies\": {\n    \"phaser\": \"^3.70.0\"\n  },\n  \"devDependencies\": {\n    \"serve\": \"^14.0.0\"\n  }\n}",
+    "index.html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>{{project_name}}</title>\n    <style>\n        body {\n            margin: 0;\n            padding: 0;\n            display: flex;\n            justify-content: center;\n            align-items: center;\n            min-height: 100vh;\n            background: #1a1a2e;\n        }\n        #game-container {\n            box-shadow: 0 0 20px rgba(0,0,0,0.5);\n        }\n    </style>\n</head>\n<body>\n    <div id=\"game-container\"></div>\n    <script src=\"node_modules/phaser/dist/phaser.min.js\"></script>\n    <script type=\"module\" src=\"src/main.js\"></script>\n</body>\n</html>",
+    "src/main.js": "import { GameScene } from './scenes/GameScene.js';\nimport { BootScene } from './scenes/BootScene.js';\n\nconst config = {\n    type: Phaser.AUTO,\n    width: 800,\n    height: 600,\n    parent: 'game-container',\n    backgroundColor: '#87CEEB',\n    physics: {\n        default: 'arcade',\n        arcade: {\n            gravity: { y: 300 },\n            debug: false\n        }\n    },\n    scene: [BootScene, GameScene]\n};\n\nconst game = new Phaser.Game(config);\n\nconsole.log('{{project_name}} started!');",
+    "src/scenes/BootScene.js": "export class BootScene extends Phaser.Scene {\n    constructor() {\n        super({ key: 'BootScene' });\n    }\n\n    preload() {\n        // Create simple colored textures programmatically\n        const graphics = this.make.graphics();\n        \n        // Player texture (red square)\n        graphics.fillStyle(0xff0000);\n        graphics.fillRect(0, 0, 32, 32);\n        graphics.generateTexture('player', 32, 32);\n        \n        // Platform texture (green)\n        graphics.clear();\n        graphics.fillStyle(0x00ff00);\n        graphics.fillRect(0, 0, 400, 32);\n        graphics.generateTexture('platform', 400, 32);\n        \n        // Ground texture\n        graphics.clear();\n        graphics.fillStyle(0x654321);\n        graphics.fillRect(0, 0, 800, 64);\n        graphics.generateTexture('ground', 800, 64);\n        \n        graphics.destroy();\n        \n        console.log('Assets loaded');\n    }\n\n    create() {\n        this.scene.start('GameScene');\n    }\n}",
+    "src/scenes/GameScene.js": "import { Player } from '../entities/Player.js';\n\nexport class GameScene extends Phaser.Scene {\n    constructor() {\n        super({ key: 'GameScene' });\n    }\n\n    create() {\n        // Background\n        this.add.rectangle(400, 300, 800, 600, 0x87CEEB);\n        \n        // Create platforms\n        const platforms = this.physics.add.staticGroup();\n        \n        // Ground\n        platforms.create(400, 568, 'ground').setScale(1).refreshBody();\n        \n        // Ledges\n        platforms.create(600, 400, 'platform').setScale(0.5).refreshBody();\n        platforms.create(50, 250, 'platform').setScale(0.5).refreshBody();\n        platforms.create(750, 220, 'platform').setScale(0.5).refreshBody();\n        \n        // Create player\n        this.player = new Player(this, 100, 450);\n        \n        // Collisions\n        this.physics.add.collider(this.player.sprite, platforms);\n        \n        // Instructions\n        this.add.text(400, 50, '{{project_name}}', {\n            fontSize: '32px',\n            fill: '#000'\n        }).setOrigin(0.5);\n        \n        this.add.text(400, 100, 'Arrow keys to move, Space to jump', {\n            fontSize: '16px',\n            fill: '#000'\n        }).setOrigin(0.5);\n    }\n\n    update() {\n        this.player.update();\n    }\n}",
+    "src/entities/Player.js": "export class Player {\n    constructor(scene, x, y) {\n        this.scene = scene;\n        this.sprite = scene.physics.add.sprite(x, y, 'player');\n        this.sprite.setBounce(0.1);\n        this.sprite.setCollideWorldBounds(true);\n        \n        // Movement properties\n        this.speed = 200;\n        this.jumpPower = 330;\n        \n        // Create cursor keys\n        this.cursors = scene.input.keyboard.createCursorKeys();\n        this.jumpKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);\n    }\n\n    update() {\n        // Horizontal movement\n        if (this.cursors.left.isDown) {\n            this.sprite.setVelocityX(-this.speed);\n        } else if (this.cursors.right.isDown) {\n            this.sprite.setVelocityX(this.speed);\n        } else {\n            this.sprite.setVelocityX(0);\n        }\n\n        // Jumping\n        if ((this.cursors.up.isDown || this.jumpKey.isDown) && this.sprite.body.touching.down) {\n            this.sprite.setVelocityY(-this.jumpPower);\n        }\n    }\n}",
+    "README.md": "# {{project_name}}\n\n{{description}}\n\n## Features\n- Phaser 3 game engine\n- Arcade physics\n- Keyboard controls\n- Scene management\n- Procedural textures (no assets needed)\n\n## Controls\n- Left/Right Arrows: Move\n- Up Arrow or Space: Jump\n\n## Running\n\n### Install dependencies\n```bash\nnpm install\n```\n\n### Start development server\n```bash\nnpm run dev\n```\n\nThen open http://localhost:3000 in your browser.\n\n## Project Structure\n```\n├── index.html          # Entry point\n├── package.json        # Dependencies\n└── src/\n    ├── main.js         # Game configuration\n    ├── scenes/\n    │   ├── BootScene.js    # Asset loading\n    │   └── GameScene.js    # Main game scene\n    └── entities/\n        └── Player.js       # Player class\n```\n\n## Extension Points\n\n### Add Enemy\nCreate `src/entities/Enemy.js` with patrol behavior.\n\n### Add Collectibles\nAdd coins that increase score when touched.\n\n### Add Levels\nCreate additional scenes for level progression.\n\n### Add Animations\nReplace colored rectangles with sprite sheets.\n"
+  },
+  "placeholders": {
+    "project_name": "My Phaser Game",
+    "description": "A simple HTML5 game using Phaser 3"
+  },
+  "extension_points": [
+    {
+      "name": "add_enemy",
+      "description": "Add enemy entities that patrol platforms",
+      "files_to_modify": ["src/scenes/GameScene.js"],
+      "suggested_code": "// Create enemy class and add to scene"
+    },
+    {
+      "name": "add_score",
+      "description": "Add scoring system with UI",
+      "files_to_modify": ["src/scenes/GameScene.js"],
+      "suggested_code": "// Score variable and text display"
+    },
+    {
+      "name": "add_sound",
+      "description": "Add sound effects and music",
+      "files_to_modify": ["src/scenes/BootScene.js", "src/entities/Player.js"],
+      "suggested_code": "// Audio loading and playback"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "author": "PeridotCode",
+    "tags": ["2d", "html5", "phaser", "beginner", "javascript"],
+    "complexity": 1,
+    "setup_time_minutes": 3
+  }
+}

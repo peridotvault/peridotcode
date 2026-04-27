@@ -110,8 +110,8 @@ pub struct Orchestrator {
     command_runner: CommandRunner,
     /// Configuration
     config: OrchestratorConfig,
-    /// Template engine (generates project scaffolding)
-    template_engine: peridot_template_engine::TemplateEngine,
+    /// Scaffold generator (generates projects from JSON templates)
+    scaffold_generator: crate::code_template::ScaffoldGenerator,
     /// Gateway client for AI-powered features
     gateway_client: Option<GatewayClient>,
     /// Configuration manager
@@ -148,12 +148,38 @@ impl Orchestrator {
         let classifier = IntentClassifier::new();
         let planner = Planner::new();
 
-        // Create template engine
-        let template_engine = match &config.templates_path {
-            Some(path) => peridot_template_engine::TemplateEngine::with_path(path)?,
-            None => peridot_template_engine::TemplateEngine::new()
-                .unwrap_or_else(|_| peridot_template_engine::TemplateEngine::default()),
-        };
+        // Create JSON-based scaffold generator
+        let mut scaffold_generator = crate::code_template::ScaffoldGenerator::new();
+        
+        // Try to load JSON templates from templates directory
+        let json_templates_path = std::path::PathBuf::from("templates");
+        if json_templates_path.exists() {
+            match scaffold_generator.load_templates(&json_templates_path) {
+                Ok(count) => {
+                    tracing::info!("Loaded {} JSON templates from {:?}", count, json_templates_path);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load JSON templates: {}", e);
+                }
+            }
+        } else {
+            // Try relative to executable
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_dir) = exe_path.parent() {
+                    let exe_templates = exe_dir.join("templates");
+                    if exe_templates.exists() {
+                        match scaffold_generator.load_templates(&exe_templates) {
+                            Ok(count) => {
+                                tracing::info!("Loaded {} JSON templates from {:?}", count, exe_templates);
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to load JSON templates from exe dir: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(Orchestrator {
             context,
@@ -161,7 +187,7 @@ impl Orchestrator {
             planner,
             command_runner,
             config,
-            template_engine,
+            scaffold_generator,
             gateway_client: None,
             config_manager: None,
             last_error: None,
@@ -497,25 +523,83 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
                     completed_steps += 1;
                 }
                 Action::SelectTemplate { .. } => {
-                    // Template selection happens in GenerateScaffold
-                    tracing::info!("Template selection deferred to scaffold generation");
+                    // Check if we have JSON templates available
+                    let template_count = self.scaffold_generator.registry().list().len();
+
+                    if template_count == 0 {
+                        tracing::error!("No templates available! Cannot generate scaffold.");
+                        return Err(peridot_shared::PeridotError::new(
+                            "No templates found. Please ensure templates are installed.".to_string()
+                        ));
+                    }
+                    tracing::info!("Template selection deferred to scaffold generation ({} templates available)",
+                        template_count);
                     completed_steps += 1;
                 }
-                Action::GenerateScaffold { .. } => {
-                    // Use real template engine to generate scaffold
-                    let ctx = peridot_template_engine::TemplateContext::from_project(
-                        &self.context.name(),
-                        None,
-                    );
-                    
-                    let result = self
-                        .template_engine
-                        .generate_with_auto_select(None, PathBuf::from("."), &ctx)?;
-                    
-                    file_changes = result.file_changes;
-                    change_summary = result.summary;
-                    tracing::info!("Generated {} files: {}", result.file_count, change_summary);
-                    completed_steps += 1;
+                Action::GenerateScaffold { template_id } => {
+                    // Use JSON-based scaffold generator
+                    let output_path = self.context.path().to_path_buf();
+                    tracing::info!("Generating scaffold to: {:?}", output_path);
+
+                    // Prepare placeholders
+                    let mut placeholders = std::collections::HashMap::new();
+                    placeholders.insert("project_name".to_string(), self.context.name());
+                    placeholders.insert("description".to_string(), format!("A game created with PeridotCode"));
+
+                    // Check if we have templates available
+                    if self.scaffold_generator.registry().list().is_empty() {
+                        tracing::error!("No JSON templates loaded");
+                        return Err(peridot_shared::PeridotError::new(
+                            "No templates found. Please ensure templates are installed.".to_string()
+                        ));
+                    }
+
+                    // Log available JSON templates
+                    let available = self.scaffold_generator.registry().list();
+                    tracing::info!("Available JSON templates: {}", available.len());
+                    for name in &available {
+                        tracing::info!("  - {}", name);
+                    }
+
+                    // Try to find template by name or use first available
+                    let template_name: String = if self.scaffold_generator.registry().has(template_id) {
+                        template_id.clone()
+                    } else {
+                        // Try to find by engine or use first available
+                        available.first().map(|s| (*s).clone()).unwrap_or_default()
+                    };
+
+                    if template_name.is_empty() {
+                        return Err(peridot_shared::PeridotError::new(
+                            "No suitable template found".to_string()
+                        ));
+                    }
+
+                    match self.scaffold_generator.generate(&template_name, &output_path, &placeholders) {
+                        Ok(result) => {
+                            tracing::info!("Generated {} files using template: {}",
+                                result.created_files.len(), result.template_name);
+
+                            change_summary = format!("Created {} files using {}",
+                                result.created_files.len(), result.template_name);
+
+                            // Create file changes for each created file
+                            for file_path in &result.created_files {
+                                file_changes.push(peridot_fs_engine::FileChange {
+                                    path: std::path::PathBuf::from(file_path),
+                                    change_type: peridot_fs_engine::ChangeType::Created,
+                                });
+                            }
+
+                            completed_steps += 1;
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to generate scaffold: {}", e);
+                            return Err(peridot_shared::PeridotError::new(format!(
+                                "Template generation failed: {}", e
+                            )));
+                        }
+                    }
                 }
                 Action::WriteFiles => {
                     tracing::info!("Writing files");
@@ -585,12 +669,12 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
                                 tracing::info!("Applying changes to: {} (new: {})", path.display(), is_new);
                                 
                                 let res = self.context.fs_engine_mut().write_file(&path, &modification.content)?;
-                                file_changes.push(peridot_template_engine::FileChange {
+                                file_changes.push(peridot_fs_engine::FileChange {
                                     path: res.path,
                                     change_type: if is_new {
-                                        peridot_template_engine::ChangeType::Created
+                                        peridot_fs_engine::ChangeType::Created
                                     } else {
-                                        peridot_template_engine::ChangeType::Modified
+                                        peridot_fs_engine::ChangeType::Modified
                                     },
                                 });
                             }
@@ -610,7 +694,7 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
         // Extract created file paths for backward compatibility
         let created_files: Vec<PathBuf> = file_changes
             .iter()
-            .filter(|c| c.change_type == peridot_template_engine::ChangeType::Created)
+            .filter(|c| c.change_type == peridot_fs_engine::ChangeType::Created)
             .map(|c| c.path.clone())
             .collect();
 
@@ -719,7 +803,7 @@ impl OrchestratorResult {
     }
 
     /// Get file changes with type information
-    pub fn file_changes(&self) -> &[peridot_template_engine::FileChange] {
+    pub fn file_changes(&self) -> &[peridot_fs_engine::FileChange] {
         self.execution_result
             .as_ref()
             .map(|r| r.file_changes.as_slice())
@@ -750,7 +834,7 @@ pub struct ExecutionResult {
     /// Files created
     pub created_files: Vec<PathBuf>,
     /// File changes with type information
-    pub file_changes: Vec<peridot_template_engine::FileChange>,
+    pub file_changes: Vec<peridot_fs_engine::FileChange>,
     /// Summary of changes
     pub change_summary: String,
     /// Next steps for user
