@@ -14,7 +14,7 @@ use tracing_subscriber::FmtSubscriber;
 #[derive(Parser, Debug)]
 #[command(name = "peridotcode")]
 #[command(about = "Terminal-first AI game creation agent")]
-#[command(version = "0.1.0")]
+#[command(version = "1.0.0")]
 struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]
@@ -42,6 +42,12 @@ enum Commands {
 
     /// Run inference example (requires configured provider)
     Infer,
+
+    /// Run agent test with prompt
+    Agent {
+        /// Prompt to send to the agent
+        prompt: String,
+    },
 
     /// Manage AI providers
     #[command(subcommand)]
@@ -145,6 +151,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Doctor) => run_doctor().await?,
         Some(Commands::Example) => run_example().await?,
         Some(Commands::Infer) => run_infer().await?,
+        Some(Commands::Agent { prompt }) => run_agent(prompt).await?,
         Some(Commands::Provider(cmd)) => run_provider_command(cmd).await?,
         Some(Commands::Model(cmd)) => run_model_command(cmd).await?,
         Some(Commands::Init { name }) => run_init(name).await?,
@@ -227,6 +234,109 @@ async fn run_infer() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Run agent test with prompt
+async fn run_agent(prompt: String) -> anyhow::Result<()> {
+    use peridot_core::agent_loop::{AgentConfig, AgentLoop, ResponseParser, StructuredResponse};
+    use peridot_core::gateway_integration::GatewayClient;
+
+    println!("Agent Test");
+    println!("=========");
+    println!();
+    println!("Prompt: {}", prompt);
+    println!();
+
+    // Load config
+    let config_manager = match peridot_model_gateway::ConfigManager::initialize() {
+        Ok(cm) => cm,
+        Err(e) => {
+            println!("Error: Could not load configuration: {}", e);
+            println!();
+            println!("Run 'peridotcode provider add openrouter --api-key <key>' first.");
+            return Ok(());
+        }
+    };
+
+    let status = config_manager.config_status();
+    if !status.is_ready() {
+        println!("AI Provider not configured.");
+        println!();
+        println!("Current status:");
+        if !status.has_provider {
+            println!("  - No provider configured");
+        }
+        if !status.provider_ready {
+            println!("  - Provider missing API key");
+        }
+        if !status.has_model {
+            println!("  - No model selected");
+        }
+        println!();
+        println!("Run 'peridotcode provider add openrouter --api-key <key>' first.");
+        return Ok(());
+    }
+
+    println!("Provider: {} / {}", 
+        status.provider_name.as_deref().unwrap_or("unknown"),
+        status.model_name.as_deref().unwrap_or("unknown")
+    );
+    println!();
+
+    // Create gateway client
+    let gateway_client = GatewayClient::from_config_manager(&config_manager).await;
+
+    if !gateway_client.is_ready() {
+        println!("Error: Could not create gateway client.");
+        return Ok(());
+    }
+
+    // Create agent
+    let agent_config = AgentConfig::default();
+    let mut agent = AgentLoop::new(agent_config, gateway_client);
+
+    println!("Sending to LLM...");
+    println!();
+
+    // Process prompt
+    let result = agent.process(&prompt).await;
+
+    if let Some(error) = result.error {
+        println!("Error: {}", error);
+        return Ok(());
+    }
+
+    // Show raw response
+    println!("Raw Response:");
+    println!("----------");
+    println!("{}", result.response);
+    println!();
+
+    // Try to parse structured response
+    println!("Parsed Response:");
+    println!("---------------");
+    match ResponseParser::parse(&result.response) {
+        Ok(structured) => {
+            println!("Action: {}", structured.action);
+            println!("Summary: {}", structured.summary);
+            if let Some(ref msg) = structured.message {
+                println!("Message: {}", msg);
+            }
+            if let Some(ref params) = structured.params {
+                println!("Params: {}", params);
+            }
+        }
+        Err(_) => {
+            println!("(Could not parse as structured JSON, showing raw response above)");
+        }
+    }
+
+    if let Some(usage) = result.usage {
+        println!();
+        println!("Tokens used: {}", usage);
+    }
+
+    Ok(())
+}
+
 /// Run provider management commands
 async fn run_provider_command(cmd: ProviderCommands) -> anyhow::Result<()> {
     match cmd {
@@ -284,7 +394,8 @@ async fn list_providers(show_all: bool) -> anyhow::Result<()> {
         // Show all supported providers
         println!("Available providers:");
         let providers = vec![
-            ("openrouter", "OpenRouter", "Access multiple AI models through one API (recommended)", true),
+            ("openrouter", "OpenRouter", "Access multiple AI models through one API", false),
+            ("groq", "Groq", "Fast Llama models (recommended)", true),
             ("openai", "OpenAI", "Direct OpenAI API access", false),
             ("anthropic", "Anthropic", "Direct Anthropic Claude API access", false),
             ("gemini", "Google Gemini", "Google Gemini API access", false),
@@ -387,7 +498,7 @@ async fn add_provider(
     let provider_id = ProviderId::new(provider);
 
     // Check if this is a supported provider
-    let supported_providers = vec!["openrouter", "openai", "anthropic", "gemini"];
+    let supported_providers = vec!["openrouter", "groq", "openai", "anthropic", "gemini"];
     if !supported_providers.contains(&provider) {
         println!("Warning: '{}' is not a built-in supported provider.", provider);
         println!("Supported providers: {}", supported_providers.join(", "));
@@ -429,6 +540,14 @@ async fn add_provider(
         provider_config.base_url = Some("https://openrouter.ai/api/v1".to_string());
         if provider_config.default_model.is_none() {
             provider_config.default_model = Some("anthropic/claude-3.5-sonnet".to_string());
+        }
+    }
+
+    // Set provider-specific defaults for Groq
+    if provider == "groq" && provider_config.base_url.is_none() {
+        provider_config.base_url = Some("https://api.groq.com/openai/v1".to_string());
+        if provider_config.default_model.is_none() {
+            provider_config.default_model = Some("llama-3.1-70b-versatile".to_string());
         }
     }
 

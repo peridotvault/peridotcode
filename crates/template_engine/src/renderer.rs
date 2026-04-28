@@ -9,6 +9,7 @@ use peridot_fs_engine::{ChangeType, FileChange, FsEngine};
 use peridot_shared::{PeridotError, PeridotResult};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use crate::registry::EMBEDDED_TEMPLATES;
 
 /// Context for template rendering (placeholder values)
 #[derive(Debug, Clone, Default)]
@@ -223,6 +224,97 @@ pub fn render_template(
         summary,
     })
 }
+
+/// Render an embedded template to an output directory
+pub fn render_template_embedded(
+    template_id: &str,
+    output_path: impl AsRef<Path>,
+    context: &TemplateContext,
+) -> PeridotResult<RenderResult> {
+    let output_path = output_path.as_ref();
+    let template_dir = EMBEDDED_TEMPLATES.get_dir(template_id)
+        .ok_or_else(|| PeridotError::TemplateNotFound(format!("Embedded template not found: {}", template_id)))?;
+
+    tracing::info!(
+        "Rendering embedded template from {} to {:?}",
+        template_id,
+        output_path
+    );
+
+    let mut fs_engine = FsEngine::new(output_path)?;
+
+    render_embedded_directory_with_engine(
+        &template_dir,
+        Path::new(template_id),
+        output_path,
+        context,
+        &mut fs_engine,
+    )?;
+
+    let change_summary = fs_engine.take_change_summary();
+    let file_count = change_summary.len();
+    let summary = change_summary.summary_line();
+
+    tracing::info!("Rendered {} files from embedded: {}", file_count, summary);
+
+    Ok(RenderResult {
+        file_changes: change_summary.changes().to_vec(),
+        file_count,
+        output_path: output_path.to_path_buf(),
+        summary,
+    })
+}
+
+/// Recursively render an embedded directory using FsEngine
+fn render_embedded_directory_with_engine(
+    dir: &include_dir::Dir<'_>,
+    template_root: &Path,
+    output_root: &Path,
+    context: &TemplateContext,
+    fs_engine: &mut FsEngine,
+) -> PeridotResult<()> {
+    for entry in dir.entries() {
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| PeridotError::FsError("Invalid file name".to_string()))?;
+
+        if file_name == "template.toml" {
+            continue;
+        }
+
+        if file_name.to_str().map(|s| s.starts_with('.')).unwrap_or(false) {
+            continue;
+        }
+
+        let relative_path = path
+            .strip_prefix(template_root)
+            .map_err(|_| PeridotError::FsError("Failed to calculate relative path".to_string()))?;
+
+        if let Some(subdir) = entry.as_dir() {
+            fs_engine.create_dir(relative_path)?;
+            tracing::debug!("Created directory: {:?}", relative_path);
+
+            render_embedded_directory_with_engine(subdir, template_root, output_root, context, fs_engine)?;
+        } else if let Some(file) = entry.as_file() {
+            let is_text = is_text_file(path);
+            
+            if is_text {
+                let content_str = file.contents_utf8()
+                    .ok_or_else(|| PeridotError::FsError(format!("Failed to read text file: {:?}", path)))?;
+                let content = substitute_placeholders(content_str, context);
+                fs_engine.write_file(relative_path, &content)?;
+            } else {
+                let content_str = String::from_utf8_lossy(file.contents()).to_string();
+                fs_engine.write_file(relative_path, &content_str)?;
+            }
+            tracing::debug!("Rendered file: {:?}", relative_path);
+        }
+    }
+
+    Ok(())
+}
+
 
 /// Recursively render a directory using FsEngine
 fn render_directory_with_engine(

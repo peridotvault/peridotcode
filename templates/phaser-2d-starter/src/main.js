@@ -15,7 +15,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 0 },
+            gravity: { y: 600 },  // Enable gravity for platformer feel
             debug: false
         }
     },

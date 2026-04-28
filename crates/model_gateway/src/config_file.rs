@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Manages configuration loading and persistence
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConfigManager {
     /// Loaded configuration
     config: GatewayConfig,
@@ -131,6 +131,36 @@ impl ConfigManager {
         &mut self.config
     }
 
+    /// Switch the active model
+    pub fn set_model(&mut self, model: crate::ModelId) {
+        self.config.default_model = Some(model);
+    }
+
+    /// Save a provider API key (adds or updates the provider config)
+    pub fn set_provider_key(&mut self, provider_id: crate::ProviderId, api_key: impl Into<String>) {
+        self.config.set_provider(
+            provider_id.clone(),
+            crate::ProviderConfig::with_api_key(api_key),
+        );
+        
+        // If the current default provider is None OR if the current default
+        // is not configured/ready, switch it to this newly configured one.
+        // This ensures a better initial UX when the user connects their first provider.
+        let default_should_switch = self.config.default_provider.as_ref()
+            .map(|p| !self.is_provider_ready(p))
+            .unwrap_or(true);
+
+        if default_should_switch {
+            tracing::info!("Setting default provider to {}", provider_id);
+            self.config.default_provider = Some(provider_id);
+        }
+    }
+
+    /// Set the default provider
+    pub fn set_default_provider(&mut self, provider_id: crate::ProviderId) {
+        self.config.default_provider = Some(provider_id);
+    }
+
     /// Get configuration status for UI display
     ///
     /// Returns a summary of what's configured.
@@ -139,9 +169,7 @@ impl ConfigManager {
             has_provider: self.config.default_provider.is_some()
                 || !self.config.providers.is_empty(),
             provider_ready: self.config.default_provider.as_ref().map_or(false, |p| {
-                self.config
-                    .get_provider(p)
-                    .map_or(false, |cfg| cfg.is_valid())
+                self.is_provider_ready(p)
             }),
             has_model: self.config.default_model.is_some(),
             provider_name: self.config.default_provider.as_ref().map(|p| p.to_string()),
@@ -191,7 +219,34 @@ impl ConfigManager {
             crate::GatewayError::ConfigError(format!("Failed to write config file: {}", e))
         })?;
 
+        // Set strict permissions (600) on Unix-like systems
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(path) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+
         Ok(())
+    }
+
+    /// Check if a specific provider is configured and ready
+    pub fn is_provider_ready(&self, provider_id: &crate::ProviderId) -> bool {
+        self.config.get_provider(provider_id).map_or(false, |cfg| {
+            if !cfg.is_valid() {
+                return false;
+            }
+            
+            // Also verify the credential can be resolved
+            if let Some(ref key_ref) = cfg.api_key {
+                self.credential_resolver.can_resolve(key_ref)
+            } else {
+                false
+            }
+        })
     }
 
     /// Resolve credentials for a provider
@@ -211,6 +266,21 @@ impl ConfigManager {
                 Ok(Some(resolved))
             }
             None => Ok(None),
+        }
+    }
+
+    /// Check if credentials for the default provider are valid and present
+    pub fn validate_credentials(&self) -> GatewayResult<()> {
+        let provider_id = self.config.default_provider.as_ref()
+            .ok_or_else(|| crate::GatewayError::ConfigError("No default provider selected".to_string()))?;
+
+        match self.resolve_credentials(provider_id) {
+            Ok(Some(key)) if !key.trim().is_empty() => Ok(()),
+            _ => Err(crate::GatewayError::CredentialError(format!(
+                "No API key configured for {}. Set {}_API_KEY in .env or run setup again.",
+                provider_id.as_str(),
+                provider_id.as_str().to_uppercase()
+            ))),
         }
     }
 
@@ -363,6 +433,182 @@ impl Default for ConfigManager {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_config_manager_new() {
+        let manager = ConfigManager::new();
+        assert!(manager.config().is_empty());
+        assert!(manager.config_path().is_none());
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("test_config.toml");
+
+        // Create a config with OpenRouter
+        let mut config = GatewayConfig::new();
+
+        let provider_config = ProviderConfig {
+            enabled: true,
+            api_key: Some("env:OPENROUTER_API_KEY".to_string()),
+            base_url: Some("https://openrouter.ai/api/v1".to_string()),
+            default_model: Some("anthropic/claude-3.5-sonnet".to_string()),
+            timeout_seconds: 60,
+            extra: std::collections::HashMap::new(),
+        };
+
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id.clone(), provider_config);
+        config.set_default_provider(provider_id.clone());
+        config.set_default_model(crate::ModelId::new("anthropic/claude-3.5-sonnet"));
+
+        let mut manager = ConfigManager::with_config(config);
+        manager.set_config_path(config_path.clone());
+
+        // Save the config
+        manager.save().unwrap();
+        assert!(config_path.exists());
+
+        // Load the config back
+        let loaded_manager = ConfigManager::load_from_file(&config_path).unwrap();
+
+        // Verify the loaded config
+        let status = loaded_manager.config_status();
+        assert!(status.has_provider);
+        assert!(status.has_model);
+        assert_eq!(status.provider_name.as_deref(), Some("openrouter"));
+    }
+
+    #[test]
+    fn test_credential_resolution() {
+        let mut config = GatewayConfig::new();
+
+        // Set up provider with env var reference
+        let provider_config = ProviderConfig {
+            enabled: true,
+            api_key: Some("env:TEST_API_KEY_VAR".to_string()),
+            base_url: None,
+            default_model: None,
+            timeout_seconds: 60,
+            extra: std::collections::HashMap::new(),
+        };
+
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id.clone(), provider_config);
+        let manager = ConfigManager::with_config(config);
+
+        // Set the environment variable
+        std::env::set_var("TEST_API_KEY_VAR", "test-secret-key");
+
+        // Resolve credentials
+        let resolved = manager.resolve_credentials(&provider_id).unwrap();
+        assert_eq!(resolved, Some("test-secret-key".to_string()));
+
+        // Clean up
+        std::env::remove_var("TEST_API_KEY_VAR");
+    }
+
+    #[test]
+    fn test_credential_resolution_missing_env() {
+        let mut config = GatewayConfig::new();
+
+        // Set up provider with env var that doesn't exist
+        let provider_config = ProviderConfig {
+            enabled: true,
+            api_key: Some("env:NONEXISTENT_VAR_12345".to_string()),
+            base_url: None,
+            default_model: None,
+            timeout_seconds: 60,
+            extra: std::collections::HashMap::new(),
+        };
+
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id.clone(), provider_config);
+        let manager = ConfigManager::with_config(config);
+
+        // Try to resolve - should fail
+        let result = manager.resolve_credentials(&provider_id);
+        assert!(result.is_err());
+
+        match result {
+            Err(crate::GatewayError::CredentialError(msg)) => {
+                assert!(msg.contains("NONEXISTENT_VAR_12345"));
+            }
+            _ => panic!("Expected CredentialError for missing env var"),
+        }
+    }
+
+    #[test]
+    fn test_config_validation() {
+        // Empty config - no providers configured, but that's not a validation error
+        // Validation errors are for misconfigurations, not missing config
+        let manager = ConfigManager::new();
+        let errors = manager.validate();
+        // Empty config has no validation errors (just no configuration)
+        assert!(errors.is_empty());
+
+        // Add a provider without API key
+        let mut config = GatewayConfig::new();
+        let provider_config = ProviderConfig::new(); // No API key
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id, provider_config);
+        config.set_default_provider(ProviderId::openrouter());
+
+        let manager = ConfigManager::with_config(config);
+
+        // Should have validation errors because default provider has no API key
+        let errors = manager.validate();
+        assert!(!errors.is_empty());
+        assert!(errors.iter().any(|e| e.contains("API key")));
+        assert!(!manager.is_valid());
+    }
+
+    #[test]
+    fn test_check_environment_variables() {
+        let mut config = GatewayConfig::new();
+
+        let provider_config = ProviderConfig {
+            enabled: true,
+            api_key: Some("env:MISSING_ENV_VAR".to_string()),
+            base_url: None,
+            default_model: None,
+            timeout_seconds: 60,
+            extra: std::collections::HashMap::new(),
+        };
+
+        let provider_id = ProviderId::openrouter();
+        config.set_provider(provider_id.clone(), provider_config);
+        let manager = ConfigManager::with_config(config);
+
+        // Check environment variables
+        let missing = manager.check_environment_variables();
+        assert!(missing.contains_key(&provider_id));
+        assert_eq!(missing.get(&provider_id).unwrap(), "MISSING_ENV_VAR");
+    }
+
+    #[test]
+    fn test_create_default_config() {
+        let config = ConfigManager::create_default();
+
+        assert!(config.default_provider.is_some());
+        assert!(config.default_model.is_some());
+        assert!(!config.providers.is_empty());
+
+        let provider_id = ProviderId::openrouter();
+        let provider_config = config.get_provider(&provider_id);
+        assert!(provider_config.is_some());
+
+        let provider_config = provider_config.unwrap();
+        assert!(provider_config.enabled);
+        assert!(provider_config.api_key.is_some());
+    }
+}
+
 /// Configuration sources in order of precedence (highest first)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigSource {
@@ -443,12 +689,13 @@ pub mod interactive {
                 "OpenRouter",
                 "Access multiple AI models through one API (recommended)",
             ),
-            (ProviderId::openai(), "OpenAI", "Direct OpenAI API access"),
-            (
-                ProviderId::anthropic(),
-                "Anthropic",
-                "Direct Anthropic Claude API access",
-            ),
+            // TODO: Enable these when fully implemented
+            // (ProviderId::openai(), "OpenAI", "Direct OpenAI API access"),
+            // (
+            //     ProviderId::anthropic(),
+            //     "Anthropic",
+            //     "Direct Anthropic Claude API access",
+            // ),
         ]
     }
 
@@ -477,3 +724,4 @@ pub mod interactive {
         }
     }
 }
+

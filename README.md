@@ -1,810 +1,178 @@
 # PeridotCode
 
-**Build games with prompts. Ship them with Peridot.**
+PeridotCode is a terminal-first AI game creation agent that generates playable Phaser 2D game prototypes from natural language prompts.
 
-> **MVP Status**: Feature-complete. See [`docs/mvp-status.md`](docs/mvp-status.md) for detailed implementation status.
->
-> **Stability**: Core features are stable. AI enhancements are provisional. See Stability section below.
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.0.0-blue)
 
-PeridotCode is a **Rust-first terminal AI game creation agent** that helps developers turn prompts into **playable game prototypes**.
+## Features
 
-It is **not** a new game engine.
-It is a **developer tool** that combines:
+- **Natural Language Game Creation:** Describe your game in plain English and get a working prototype
+- **OpenCode-Style Editing:** Edit existing games with prompts just like OpenCode
+- **Multi-Provider AI Support:** Works with OpenRouter, OpenAI, Anthropic, and more
+- **Smart Context Awareness:** Reads your existing code and makes intelligent modifications
+- **Safe File Operations:** All changes are tracked and can be reviewed before applying
+- **Real-time Feedback:** See what files are being read and modified as you work
 
-- A terminal-first workflow,
-- AI-powered prompt handling (with user-selected providers),
-- Template-driven scaffold generation,
-- And future-ready integration into the Peridot ecosystem.
+## Prerequisites
 
----
+- **Rust toolchain** (MSRV 1.78) for compiling the CLI.
+- **Node.js and npm** for running the generated Phaser 2D games locally.
 
-## Current MVP Focus
+## Installation
 
-PeridotCode currently focuses on one narrow, strong path:
-
-- Terminal-first CLI/TUI
-- Prompt intake
-- Provider/model setup flow
-- **OpenRouter-first** model support
-- Playable **Phaser 2D starter** generation
-- Safe local file generation
-- Editable scaffold output
-
-The MVP goal is simple:
-
-**prompt → scaffold → playable**
-
----
-
-## Product Direction
-
-PeridotCode is designed to become the **creation layer** of the Peridot ecosystem.
-
-Today:
-
-- Generate runnable game prototypes from prompts
-
-Later:
-
-- Add modular game systems (skills)
-- Support more providers and models
-- Support more templates/frameworks
-- Prepare projects for PeridotVault integration
-
----
-
-## Stability
-
-PeridotCode is in **MVP** (Minimum Viable Product) stage:
-
-### ✅ Stable (Production-Ready)
-- Terminal UI and CLI commands
-- OpenRouter provider integration
-- Phaser 2D starter template generation
-- File generation with safety checks
-- Basic configuration management
-
-### ⚠️ Provisional (Working, May Evolve)
-- AI-enhanced intent classification
-- OpenAI/Anthropic provider adapters
-- Model catalog tier assignments
-- Multi-step setup flow UI
-
-### 🚧 Deferred (Foundation Only)
-- Full skill system
-- Streaming responses
-- Advanced error recovery
-- Cost tracking
-
-See [`docs/mvp-status.md`](docs/mvp-status.md) for complete status details.
-
----
-
-## What PeridotCode Is
-
-PeridotCode is:
-
-- A terminal-first AI game creation agent
-- A Rust-based developer tool
-- A prompt-to-game prototype generator
-- A **model-agnostic** workflow with user-configured providers
-- A future on-ramp into PeridotVault
-
-PeridotCode is **not**:
-
-- A replacement for Unity, Godot, or Unreal
-- A full visual editor
-- A no-code builder for any kind of game
-- A publishing platform by itself
-- A fully autonomous game factory
-
----
-
-## MVP Scope
-
-### In Scope
-
-- Rust Cargo workspace
-- CLI entrypoint: `peridotcode`
-- Terminal UI shell
-- Provider/model configuration flow
-- OpenRouter-first support
-- Prompt intake
-- Basic orchestration
-- Template-driven generation
-- First template: **Phaser 2D starter**
-- Safe file writes
-- File generation summaries
-- Run instructions
-
-### Out of Scope
-
-- PeridotVault authentication
-- Direct publishing to PeridotVault
-- Multiple engine support
-- Godot support in MVP
-- Plugin marketplace
-- Advanced multi-agent loops
-- Billing and cost optimization
-- Local model support in MVP
-
----
-
-## Repository Structure
-
-```text
-peridotcode/
-├─ AGENTS.md
-├─ README.md
-├─ Cargo.toml
-├─ Cargo.lock
-├─ .gitignore
-├─ .env.example
-│
-├─ docs/
-│  ├─ prd.md              # Product Requirements
-│  ├─ mvp.md              # MVP Scope Definition
-│  ├─ architecture.md     # Architecture Documentation
-│  └─ roadmap.md          # Future Roadmap
-│
-├─ crates/
-│  ├─ cli/                # CLI entrypoint
-│  ├─ tui/                # Terminal UI
-│  ├─ core/               # Orchestration logic
-│  ├─ model_gateway/      # Provider/model abstraction
-│  ├─ template_engine/    # Template selection and rendering
-│  ├─ fs_engine/          # Safe file operations
-│  ├─ command_runner/     # Diagnostics and command execution
-│  ├─ skills/             # Future skill system foundation
-│  └─ shared/             # Common types and utilities
-│
-├─ templates/
-│  └─ phaser-2d-starter/  # MVP template
-│
-└─ examples/
-   └─ generated-projects/ # Example outputs
-```
-
----
-
-## Crate Overview
-
-### `crates/cli`
-
-Executable entrypoint and top-level command wiring. Thin layer that bootstraps the TUI.
-
-### `crates/tui`
-
-Terminal UI rendering and interaction state management using ratatui. Handles all user interaction including setup flows.
-
-### `crates/core`
-
-Orchestration, planning, prompt flow, and project context logic. The "brain" that coordinates all operations.
-
-### `crates/model_gateway`
-
-**NEW** - Model/provider abstraction layer. Key components:
-- `provider` - Provider trait and registry
-- `config` - Configuration structures
-- `credentials` - API key resolution
-- `inference` - Normalized request/response types
-
-This crate allows PeridotCode to support multiple AI providers starting with OpenRouter.
-
-### `crates/template_engine`
-
-Template selection and scaffold generation logic. Knows how to render templates into runnable projects.
-
-### `crates/fs_engine`
-
-Safe file read/write/diff/safety logic. Prevents accidental writes outside project boundaries.
-
-### `crates/command_runner`
-
-Local diagnostics (doctor) and safe command execution helpers. Provides run instructions for generated projects.
-
-### `crates/skills`
-
-Future modular skill abstractions and registries. Foundation-only in MVP.
-
-### `crates/shared`
-
-Shared types (ProviderId, ModelId, TemplateId, etc.), constants, and small utilities. Has no dependencies on other workspace crates.
-
----
-
-## Supported Provider Strategy
-
-### Fully Implemented ✅
-
-- **OpenRouter** - Primary supported provider
-  - Chat completions API
-  - Dynamic model listing with fallback
-  - Full error handling
-  - Recommended for MVP
-
-### Minimally Implemented ⚠️
-
-These providers have basic implementations that work but lack advanced features:
-
-- **OpenAI** - Basic chat completions
-  - Static model list (no dynamic fetching)
-  - No streaming support
-  - No function calling / JSON mode
-
-- **Anthropic** - Basic message completions
-  - Static model list (no dynamic fetching)
-  - No streaming support
-  - No tool use support
-  - System messages handled via separate field (Anthropic-specific)
-
-**Limitations of minimal implementations:**
-- Static model lists only (no API fetching)
-- No streaming support (MVP scope)
-- No advanced features (function calling, vision, etc.)
-- Basic error handling
-- May have provider-specific quirks in message handling
-
-### Configuration-Only 🔧
-
-- **Gemini** - Can be configured but not yet implemented
-
-### Planned Later 🔜
-
-- **Local models** - Ollama, llama.cpp support for on-device inference
-- **Custom providers** - Generic adapter for custom OpenAI-compatible endpoints
-
-### Adding a Provider
+### From Source (Recommended)
 
 ```bash
-# OpenRouter (recommended, fully featured)
-peridotcode provider add openrouter --api-key "env:OPENROUTER_API_KEY"
-
-# OpenAI (basic implementation)
-peridotcode provider add openai --api-key "env:OPENAI_API_KEY"
-
-# Anthropic (basic implementation)
-peridotcode provider add anthropic --api-key "env:ANTHROPIC_API_KEY"
-
-# Note: Set --default flag to make a provider the default
-peridotcode provider add openai --api-key "env:OPENAI_API_KEY" --default
+git clone https://github.com/peridotvault/peridotcode.git
+cd peridotcode
+cargo install --path crates/cli
 ```
 
-### Provider Selection
+After building, the `peridotcode` binary will be available in your `~/.cargo/bin` directory, which is typically already on your `PATH`.
+You can then run `peridotcode` from anywhere.
 
-**For best results, use OpenRouter** because:
-- It's the most tested and feature-complete
-- Provides access to multiple model families through one API
-- Has the best error handling and model listing
-- Uses OpenAI-compatible format (easier to integrate)
+### Updating to Latest Version
 
-OpenAI and Anthropic adapters are provided for users who:
-- Have existing API keys and prefer direct provider access
-- Want to avoid OpenRouter as an intermediary
-- Are okay with minimal implementations
-
-### Model Catalog Strategy
-
-PeridotCode organizes models into three tiers to help you choose without being overwhelmed:
-
-| Tier | Symbol | Description | Use When |
-|------|--------|-------------|----------|
-| **Recommended** | ★ | Best models for PeridotCode workflows | You want reliable, well-tested results |
-| **Supported** | ✓ | Work well but not primary recommendations | You have specific needs or preferences |
-| **Experimental** | ⚠ | New, untested, or preview models | You want to try latest models (may have issues) |
-
-**Model Selection Guidance:**
+If you already have PeridotCode installed and want to update to the latest version:
 
 ```bash
-# See all models organized by tier
-peridotcode model list
-
-# See only recommended (best for most users)
-peridotcode model list --recommended
-
-# See supported alternatives
-peridotcode model list --supported
-
-# See experimental (use at your own risk)
-peridotcode model list --experimental
+cd peridotcode
+git pull origin main
+cargo install --path crates/cli
 ```
 
-### Recommended Models by Provider
+The new version will automatically replace the old one.
 
-**OpenRouter (Primary Recommended Models):**
-
-★ **Recommended - Start here:**
-- `anthropic/claude-3.5-sonnet` - **Best overall**: Excellent quality at reasonable cost
-- `openai/gpt-4o-mini` - **Best value**: Fastest and cheapest for simple tasks
-- `anthropic/claude-3-haiku` - **Best for iterations**: Quick prototyping
-- `google/gemini-flash-1.5` - **Best for large projects**: 1M token context window
-
-✓ **Supported - For specific needs:**
-- `anthropic/claude-3-opus` - Maximum quality (higher cost)
-- `openai/gpt-4o` - OpenAI's best model (higher cost)
-- `openai/gpt-3.5-turbo` - Budget option (limited context)
-
-**OpenAI (direct):**
-- `gpt-4o` - High quality, moderate cost (Supported)
-- `gpt-4o-mini` - Fast and inexpensive (Recommended if using OpenAI directly)
-
-**Anthropic (direct):**
-- `claude-3-opus-20240229` - Highest quality (Supported)
-- `claude-3-sonnet-20240229` - Good balance (Recommended if using Anthropic directly)
-- `claude-3-haiku-20240307` - Fastest (Recommended if using Anthropic directly)
-
-### Cost Tiers
-
-Models are also classified by cost to help you budget:
-
-| Cost Tier | Indicator | Approximate Cost |
-|-----------|-----------|------------------|
-| Low | $ | ~$0.10-0.50 per 1M tokens |
-| Moderate | $$ | ~$0.50-5.00 per 1M tokens |
-| High | $$$ | ~$5.00+ per 1M tokens |
-
-View cost information in the model list:
-```bash
-peridotcode model list
-```
-
-### Why This Organization?
-
-PeridotCode uses a tiered model catalog to:
-
-1. **Prevent choice overload** - 3 clear tiers instead of an unbounded list
-2. **Guide sensible defaults** - Recommended models are well-tested
-3. **Support future growth** - Easy to add new models with appropriate tiers
-4. **Enable task-specific recommendations** (future) - Different models for scaffolding vs enhancement
-
-PeridotCode is designed to be **model-agnostic**. Users configure their own API keys and choose their preferred models. The architecture supports adding new providers without changes to the core orchestration logic.
-
----
-
-## Configuration
-
-PeridotCode uses a layered configuration system:
-
-1. **Command-line arguments** (highest priority)
-2. **Environment variables**
-3. **Project `.env` file** (current directory)
-4. **User config file** (platform-specific location)
-5. **Default values** (lowest priority)
-
-### Config File Location
-
-Configuration is stored in TOML format at platform-specific locations:
-
-| Platform | Path |
-|----------|------|
-| **Linux** | `~/.config/peridotcode/config.toml` |
-| **macOS** | `~/Library/Application Support/peridotcode/config.toml` |
-| **Windows** | `%APPDATA%\peridotcode\config.toml` |
-
-### Configuration Format
-
-Create a `config.toml` file:
-
-```toml
-# Default provider and model
-# These are used when you don't specify otherwise
-default_provider = "openrouter"
-default_model = "anthropic/claude-3.5-sonnet"
-
-[providers.openrouter]
-enabled = true
-# Use "env:VARNAME" to reference environment variables
-# This keeps secrets out of the config file
-api_key = "env:OPENROUTER_API_KEY"
-# Optional: override the base URL
-base_url = "https://openrouter.ai/api/v1"
-# Optional: default model for this provider
-default_model = "anthropic/claude-3.5-sonnet"
-# Optional: request timeout in seconds
-timeout_seconds = 60
-
-# You can configure multiple providers
-[providers.openai]
-enabled = false
-api_key = "env:OPENAI_API_KEY"
-base_url = "https://api.openai.com/v1"
-default_model = "gpt-4o-mini"
-```
-
-### Environment Variables
-
-For quick setup, you can use environment variables directly:
+### Quick Install Script
 
 ```bash
-# OpenRouter (MVP priority)
-export OPENROUTER_API_KEY="sk-or-v1-..."
-
-# Future providers (not yet implemented)
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-export GEMINI_API_KEY="..."
+curl -sSL https://raw.githubusercontent.com/peridotvault/peridotcode/main/install.sh | bash
 ```
 
-### Project-Level `.env` File
+## Quickstart
 
-For project-specific configuration, create a `.env` file in your project directory:
+### 1. First Time Setup
 
-```bash
-# In your project root
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
-PERIDOT_PROVIDER=openrouter
-PERIDOT_MODEL=anthropic/claude-3.5-sonnet
-```
-
-PeridotCode will automatically load `.env` from the current working directory.
-
-### Credential References
-
-API keys can be specified in multiple ways:
-
-1. **Environment variable reference** (recommended for security):
-   ```toml
-   api_key = "env:OPENROUTER_API_KEY"
-   ```
-
-2. **Direct key with prefix** (not recommended, for testing only):
-   ```toml
-   api_key = "key:sk-or-v1-your-actual-key"
-   ```
-
-3. **Raw key** (legacy, not recommended):
-   ```toml
-   api_key = "sk-or-v1-your-actual-key"
-   ```
-
-**Security Best Practices:**
-- ✅ Use `env:VARNAME` references in config files
-- ✅ Add `.env` to `.gitignore` to prevent committing secrets
-- ❌ Never commit API keys to version control
-- ❌ Never hardcode API keys in source code
-
-### Provider and Model Management Commands
-
-PeridotCode provides CLI commands for managing AI providers and models:
-
-#### Provider Commands
+Run `peridotcode` and follow the setup wizard:
 
 ```bash
-# List configured providers
-peridotcode provider list
-
-# List all available providers (including unconfigured)
-peridotcode provider list --all
-
-# Add a new provider
-peridotcode provider add openrouter --api-key "env:OPENROUTER_API_KEY"
-
-# Add with specific model and set as default
-peridotcode provider add openrouter \
-  --api-key "env:OPENROUTER_API_KEY" \
-  --model "anthropic/claude-3.5-sonnet" \
-  --default
-
-# Set default provider
-peridotcode provider use openrouter
-
-# Show current provider configuration
-peridotcode provider show
-```
-
-#### Model Commands
-
-```bash
-# List available models
-peridotcode model list
-
-# List only recommended models
-peridotcode model list --recommended
-
-# List models for a specific provider
-peridotcode model list --provider openrouter
-
-# Set default model
-peridotcode model use anthropic/claude-3.5-sonnet
-
-# Show current model configuration
-peridotcode model show
-```
-
-#### Complete Setup Example
-
-```bash
-# 1. Add OpenRouter provider (MVP-ready)
-peridotcode provider add openrouter \
-  --api-key "env:OPENROUTER_API_KEY" \
-  --default
-
-# 2. View available models
-peridotcode model list --recommended
-
-# 3. Set your preferred model
-peridotcode model use anthropic/claude-3.5-sonnet
-
-# 4. Verify everything is configured
-peridotcode doctor
-
-# 5. Start creating games
 peridotcode
 ```
 
-### First-Time Setup
+You'll be guided through:
+- Selecting an AI provider (OpenRouter recommended)
+- Entering your API key
+- Choosing your preferred model
 
-When you first run PeridotCode without configuration, it will guide you through an interactive setup:
-
-**Automatic Setup Flow:**
-
-1. **Welcome** - Brief introduction to PeridotCode
-2. **Select Provider** - Choose from available AI providers (OpenRouter recommended)
-3. **Enter API Key** - Input your API key directly or use environment variable reference
-4. **Select Model** - Choose your default model (e.g., Claude 3.5 Sonnet)
-5. **Save Configuration** - Settings are saved to your user config file
-
-### Setup States
-
-The TUI will guide you through setup if any of these are true:
-- No configuration file exists
-- No environment variables are set
-- The configured provider is missing an API key
-
-During setup, you can:
-- **Navigate** with ↑/↓ arrows
-- **Select** with Enter
-- **Go back** with Esc
-- **Quit** with 'q'
-
-### Post-Setup
-
-After successful setup, the main interface shows:
-```
-[Welcome] Ready | openrouter / anthropic/claude-3.5-sonnet | /path/to/project
-```
-
-Your provider and model are displayed in the status bar for easy reference.
-
-### Configuration Validation
-
-PeridotCode validates configuration on startup and will prompt you to set up a provider if:
-- No configuration file exists
-- No environment variables are set
-- The configured provider is missing an API key
-
-**Check your configuration:**
-```bash
-# Show environment and provider status
-peridotcode doctor
-```
-
-The doctor command will show:
-- Node.js and npm installation status
-- AI provider configuration status
-- Missing dependencies or configuration issues
-
-### Multiple Provider Support
-
-While MVP focuses on OpenRouter, the configuration system supports multiple providers for future expansion:
-
-```toml
-default_provider = "openrouter"
-
-[providers.openrouter]
-enabled = true
-api_key = "env:OPENROUTER_API_KEY"
-
-[providers.openai]
-enabled = true
-api_key = "env:OPENAI_API_KEY"
-
-[providers.anthropic]
-enabled = false
-api_key = "env:ANTHROPIC_API_KEY"
-```
-
-Enable/disable providers by changing the `enabled` field.
-
-### OpenRouter Adapter
-
-The OpenRouter adapter is fully implemented and supports:
-
-- **Chat completions** - Send prompts and receive AI-generated responses
-- **Model listing** - Fetch available models from OpenRouter API (with static fallback)
-- **Error handling** - Clean error messages for common issues (invalid key, rate limits, etc.)
-- **Configuration** - Full support for API keys, base URLs, timeouts, and default models
-
-**Recommended Models:**
-
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `anthropic/claude-3.5-sonnet` | Claude 3.5 Sonnet | Game scaffolding (recommended) |
-| `openai/gpt-4o-mini` | GPT-4o Mini | Fast prototyping |
-| `anthropic/claude-3-haiku` | Claude 3 Haiku | Quick iterations |
-| `google/gemini-flash-1.5` | Gemini Flash 1.5 | Large context needs |
-
----
-
-## Development Setup
-
-### Requirements
-
-- Rust stable toolchain (1.78+)
-- Cargo
-- A provider API key for model-backed workflows (OpenRouter recommended for MVP)
-- Node.js (only for running generated Phaser projects)
-
-### Recommended First Provider
-
-For MVP, start with **OpenRouter**:
-1. Sign up at [openrouter.ai](https://openrouter.ai)
-2. Generate an API key
-3. Set `OPENROUTER_API_KEY` environment variable
-
----
-
-## Local Development
-
-### 1. Clone the repository
+### 2. Create a New Game
 
 ```bash
-git clone <your-repo-url>
-cd peridotcode
+# Create a new project directory
+mkdir my-game && cd my-game
+
+# Start PeridotCode and enter your prompt
+peridotcode
+# Then type: "Create a platformer with jumping and collectibles"
 ```
 
-### 2. Create environment file
+### 3. Edit an Existing Game
+
+Navigate to your game directory and run PeridotCode:
 
 ```bash
-cp .env.example .env
-```
-
-### 3. Add your API key
-
-```bash
-# Edit .env
-OPENROUTER_API_KEY=your_key_here
-```
-
-### 4. Build the workspace
-
-```bash
-cargo build
-```
-
-### 5. Run the CLI
-
-```bash
-cargo run -p peridot-cli
-```
-
-Or with a specific command:
-
-```bash
-cargo run -p peridot-cli -- --help
-```
-
----
-
-## Expected First-Time Flow
-
-1. Run `peridotcode`
-2. If no provider is configured, setup flow begins
-3. Choose **OpenRouter** as provider
-4. Provide API key (or confirm env var is set)
-5. Choose default model (e.g., `anthropic/claude-3.5-sonnet`)
-6. Enter a prompt describing your game
-7. System generates a playable scaffold
-8. Review created files and follow run instructions
-
----
-
-## Example Product Flow
-
-A developer should be able to do:
-
-```bash
-mkdir my-game
 cd my-game
 peridotcode
+# Then type: "Add double jump ability to the player"
 ```
 
-Then enter a prompt:
+### 4. Run Your Game
 
-> Make a 2D top-down adventure prototype with one map, basic movement, and simple UI.
+After generation, run your game:
 
-PeridotCode will:
+```bash
+npm install
+npm run dev
+```
 
-- Check provider configuration
-- Classify the request
-- Select the Phaser starter template
-- Generate scaffold files
-- Summarize created files
-- Explain how to run the project
+## Usage Examples
 
----
+### Creating Games
+- `"Create a 2D platformer with enemies and coins"`
+- `"Make a space shooter with power-ups"`
+- `"Build a puzzle game with tile matching"`
 
-## MVP Template
+### Editing Games (OpenCode-Style)
+You can edit existing games by describing what you want to change:
 
-### `phaser-2d-starter`
+**Modification Keywords**: `change`, `fix`, `update`, `tweak`, `adjust`, `modify`, `edit`, `alter`, `improve`
 
-Generates:
+- `"change background to black"` - Changes existing code
+- `"fix the jumping physics"` - Fixes bugs in existing code  
+- `"update player speed to be faster"` - Updates existing values
+- `"add a health bar to the player"` - Adds new feature (uses "add")
+- `"make the enemies shoot projectiles"` - Adds new capability
+- `"add a pause menu"` - Adds new feature
 
-- A minimal Phaser project
-- Runnable development setup
-- Small scene structure
-- Simple placeholder game logic
-- Editable code and assets structure
+**Important**: The AI looks at your existing code and makes intelligent changes. You'll see:
+- "✓ Changes applied successfully!" - When existing files are modified
+- File changes marked with `~` for modifications, `+` for new files
 
-The generated result is easy to inspect, modify, and extend manually.
+## Commands
 
----
+- `peridotcode` - Launch the interactive TUI
+- `peridotcode doctor` - Check environment setup
+- `peridotcode provider add <name> --api-key <key>` - Add AI provider
+- `peridotcode model list` - List available models
+- `peridotcode init <name>` - Initialize a new project
 
-## Safety Principles
+## TUI Shortcuts
 
-PeridotCode is a local developer tool and must behave safely.
+### Navigation & Control
+- `/connect` - Open provider configuration
+- `/models` - Open model picker to switch AI models
+- `Ctrl+C` or `q` - Quit
+- `Esc` - Cancel current operation
+- `Enter` - Submit prompt
 
-Rules:
+### Model Switching
+1. Type `/models` to open the model picker
+2. **The model picker fetches real-time available models from OpenRouter API** - only showing models that actually work with your API key
+3. Use ↑/↓ arrow keys to navigate models
+4. Press `Enter` to select a model
+5. The model switches immediately and you'll see "✓ Model switched to: [model-name]"
+6. Your next prompt will use the newly selected model
 
-- Never write outside intended project boundaries
-- Never auto-run destructive commands
-- Always show created/modified file summaries
-- Keep side effects explicit and reviewable
+**Note**: The model picker dynamically queries OpenRouter's API to get the actual list of available models. This ensures you never see models that would return 404 errors. If the API fetch fails, it falls back to a curated list of verified working models.
 
----
+### Mouse Support
+PeridotCode now supports mouse interaction!
 
-## Architecture Principle
+- **Click on Task Log** - Select a log entry (highlighted in cyan)
+  - **Double-click** - Copy that entry to clipboard
+- **Click on Files** - Select a file (highlighted in green)
+  - **Double-click** - Copy file path to clipboard
+- **Click on Main Panel** - Switch to input mode (from Welcome/Results)
+- **Scroll wheel** - Scroll through panels (when implemented)
 
-PeridotCode optimizes for:
+### Clipboard Support (Copy & Paste)
+- **Ctrl+V** - Paste text from clipboard into input (works in prompt input and API key input)
+- **Ctrl+C** (in Results screen) - Copy the last message from task log
+- **Ctrl+Shift+C** (in Results screen) - Copy all error messages
+- **Ctrl+Shift+A** (in Results screen) - Copy all task log entries
 
-- Clarity
-- Safety
-- Modularity
-- One strong happy path
-- Provider flexibility without chaos
+Perfect for:
+- Pasting long API keys
+- Pasting prompt text from documentation
+- Copying error messages to search online or share
+- Keeping a record of what the AI generated
 
-Not for:
+## Architecture & Reading
 
-- Broad engine support in MVP
-- Maximum autonomy
-- Flashy but brittle generation
-- Premature complexity
-
----
-
-## Long-Term Direction
-
-PeridotCode can grow into:
-
-- Additional templates
-- Multiple framework/engine targets
-- Skill-based feature addition
-- Peridot-specific integration modules
-- Game packaging and shipping preparation
-
-Current mission is still narrow:
-
-**Make prompt-to-playable prototype generation work well.**
-
----
-
-## Internal Product Standard
-
-When in doubt, the project should support this outcome:
-
-**A developer can configure a model provider, enter a prompt, and receive a playable scaffold through a clean Rust terminal workflow.**
-
----
-
-## Documentation
-
-- `docs/prd.md` - Product Requirements Document
-- `docs/mvp.md` - MVP Scope and Success Criteria
-- `docs/architecture.md` - Detailed Architecture
-- `AGENTS.md` - Guidelines for AI assistants working on this codebase
-
----
+- [docs/architecture.md](docs/architecture.md) - How the workspace and systems interact
+- [docs/prd.md](docs/prd.md) - Product requirements and vision
+- [CHANGELOG.md](CHANGELOG.md) - History of changes and milestones
 
 ## License
 
-MIT
+MIT License - See [LICENSE](LICENSE) for details.

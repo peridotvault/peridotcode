@@ -117,6 +117,11 @@ pub enum Action {
         /// Message to display
         message: String,
     },
+    /// Apply an AI-driven modification
+    ModifyProject {
+        /// The modification prompt
+        prompt: String,
+    },
 }
 
 /// Creates execution plans from intents
@@ -134,6 +139,7 @@ impl Planner {
         match classification.intent {
             Intent::CreateNewGame => self.plan_create_new_game(&classification.params),
             Intent::AddFeature => self.plan_add_feature(&classification.params),
+            Intent::ModifyCode => self.plan_modify_code(&classification.params),
             Intent::Unsupported => self.plan_unsupported(),
         }
     }
@@ -213,6 +219,31 @@ impl Planner {
                 },
             ));
         }
+
+        plan
+    }
+
+    /// Plan for modifying existing code
+    fn plan_modify_code(&self, params: &IntentParams) -> ExecutionPlan {
+        let mut plan = ExecutionPlan::new(
+            "modify_code",
+            "Modify project code",
+            Intent::ModifyCode,
+        );
+
+        plan.add_step(Step::new(
+            "load_context",
+            "Scanning project files",
+            Action::LoadContext,
+        ));
+
+        plan.add_step(Step::new(
+            "modify_project",
+            "Applying AI-driven changes",
+            Action::ModifyProject {
+                prompt: params.raw_prompt.clone(),
+            },
+        ));
 
         plan
     }

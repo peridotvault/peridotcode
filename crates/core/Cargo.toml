@@ -16,6 +16,12 @@ peridot-skills = { workspace = true }
 peridot-model-gateway = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+regex = "1.12.3"
+serde = { workspace = true }
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile = "3.8"
+tokio-test = "0.4"
+wiremock = "0.6"
+serde_json = { workspace = true }

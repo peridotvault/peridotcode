@@ -78,6 +78,11 @@ impl ProjectContext {
         &self.fs_engine
     }
 
+    /// Get mutable access to the file system engine
+    pub fn fs_engine_mut(&mut self) -> &mut FsEngine {
+        &mut self.fs_engine
+    }
+
     /// Get the project name (from config or directory name)
     pub fn name(&self) -> String {
         if let Some(config) = &self.config {

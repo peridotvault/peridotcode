@@ -13,6 +13,7 @@ peridot-fs-engine = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
+include_dir = "0.7.4"
 
 [dev-dependencies]
 tempfile = "3.8"
