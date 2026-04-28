@@ -43,6 +43,7 @@
 
 #![warn(missing_docs)]
 
+pub mod agent_loop;
 pub mod context;
 pub mod gateway_integration;
 pub mod intent;
@@ -81,4 +82,10 @@ pub use peridot_template_engine::{ChangeType, FileChange};
 pub use peridot_model_gateway::{
     ConfigManager, ConfigStatus, GatewayError, InferenceRequest as GatewayInferenceRequest,
     InferenceResponse, Message, Provider, ProviderId,
+};
+
+// Re-export agent loop types
+pub use agent_loop::{
+    AgentConfig, AgentError, AgentLoop, AgentMessage, AgentResult, AgentState, AgentTool,
+    MessageRole, ToolRegistry,
 };

@@ -165,6 +165,7 @@ pub mod catalog;
 pub mod config;
 pub mod config_file;
 pub mod credentials;
+pub mod groq;
 pub mod inference;
 pub mod model;
 /// Observability and tracking module
@@ -180,6 +181,7 @@ pub use catalog::{ModelCatalog, ModelFilter};
 pub use config::{GatewayConfig, ProviderConfig};
 pub use config_file::{interactive, ConfigManager, ConfigSource};
 pub use credentials::CredentialResolver;
+pub use groq::{create_groq_client, GroqClient};
 pub use inference::{InferenceRequest, InferenceResponse, Message, Role, UsageStats};
 pub use model::{
     CostTier, ModelCapability, ModelDescriptor, ModelId, ModelTier, recommended,
@@ -469,6 +471,6 @@ pub const API_VERSION: &str = "0.1.0";
 pub fn is_provider_supported(provider_id: &ProviderId) -> bool {
     matches!(
         provider_id.as_str(),
-        "openrouter" | "openai" | "anthropic" | "gemini" | "local"
+        "openrouter" | "groq" | "openai" | "anthropic" | "gemini" | "local"
     )
 }

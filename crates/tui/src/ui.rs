@@ -25,13 +25,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Split content area into left (main) and right (side panels)
     let content_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
         .split(main_chunks[0]);
 
     // Split right panel into task log and file summary
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(content_chunks[1]);
 
     // Draw main content area
@@ -182,41 +182,36 @@ fn render_welcome(app: &App) -> Text<'_> {
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Welcome to PeridotCode!",
+            "  PeridotCode  ",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(format!("Project: {}", app.project_path().display())),
-        Line::from(""),
-        Line::from("Build games with natural language prompts."),
+        Line::from(format!("  Project: {}", app.project_path().display())),
         Line::from(""),
     ];
 
-    // Show provider info if configured
     if let Some(provider) = app.provider_info() {
         lines.push(Line::from(vec![
-            Span::from("Provider: "),
+            Span::from("  "),
             Span::styled(provider, Style::default().fg(Color::Green)),
         ]));
     }
 
     if let Some(model) = app.model_info() {
         lines.push(Line::from(vec![
-            Span::from("Model: "),
-            Span::styled(model, Style::default().fg(Color::Green)),
+            Span::from("  Model: "),
+            Span::styled(model, Style::default().fg(Color::Yellow)),
         ]));
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from(
-        "Press Enter to start or type a prompt directly.",
-    ));
+    lines.push(Line::from("  Build games with prompts."));
     lines.push(Line::from(""));
-    lines.push(Line::from("Press 'q' to quit."));
+    lines.push(Line::from("  Enter to start, /connect to setup, /models to change"));
 
-    Text::from(lines)
+Text::from(lines)
 }
 
 /// Render input screen content
@@ -224,7 +219,7 @@ fn render_input(app: &App) -> Text<'_> {
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Describe your game:",
+            "  Your Game Idea:",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -232,28 +227,29 @@ fn render_input(app: &App) -> Text<'_> {
         Line::from(""),
     ];
 
-    // Display the user's input
     let input = app.input_buffer();
     if input.is_empty() {
         lines.push(Line::from(Span::styled(
-            "Type your prompt here...",
+            "  Type here...",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        lines.push(Line::from(Span::styled(
-            input,
-            Style::default().fg(Color::White),
-        )));
+        for line in input.lines() {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", line),
+                Style::default().fg(Color::White),
+            )));
+        }
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Example: 'Make a 2D platformer with jumping'",
+        "  /platformer /puzzle /shooter etc.",
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Press Enter to submit, Esc to cancel, Ctrl+V to paste",
+        "  Enter submit  |  Esc back",
         Style::default().fg(Color::Yellow),
     )));
 
@@ -421,7 +417,7 @@ fn draw_error_modal(f: &mut Frame, state: &crate::overlays::ErrorModalState) {
 }
 
 fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::ProviderPickerState) {
-    let area = centered_rect(60, 50, f.area());
+    let area = centered_rect(55, 45, f.area());
     f.render_widget(Clear, area);
 
     let block = Block::default()
@@ -438,11 +434,11 @@ fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::Provider
         .iter()
         .enumerate()
         .map(|(i, opt)| {
-            let prefix = if i == state.cursor { "▶ " } else { "  " };
+            let prefix = if i == state.cursor { "▶" } else { " " };
             let label = if opt.enabled {
-                format!("{}{}", prefix, opt.label)
+                format!("{} {}", prefix, opt.label)
             } else {
-                format!("{}{}  [coming soon]", prefix, opt.label)
+                format!("{} {}  [coming soon]", prefix, opt.label)
             };
             let style = if i == state.cursor && opt.enabled {
                 Style::default()
@@ -457,7 +453,7 @@ fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::Provider
             ListItem::new(vec![
                 Line::from(Span::styled(label, style)),
                 Line::from(Span::styled(
-                    format!("     {}", opt.description),
+                    format!("   {}", opt.description),
                     desc_style,
                 )),
             ])
@@ -472,7 +468,7 @@ fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::Provider
 
     f.render_widget(list, help_area[0]);
     f.render_widget(
-        Paragraph::new("↑↓ navigate   Enter select   Esc cancel")
+        Paragraph::new("↑↓ navigate  Enter select  Esc cancel")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         help_area[1],

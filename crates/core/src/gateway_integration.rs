@@ -181,6 +181,17 @@ pub struct GatewayClient {
     model_id: Option<String>,
 }
 
+impl Clone for GatewayClient {
+    fn clone(&self) -> Self {
+        Self {
+            provider: None,
+            config_status: self.config_status.clone(),
+            _provider_id: self._provider_id.clone(),
+            model_id: self.model_id.clone(),
+        }
+    }
+}
+
 impl GatewayClient {
     /// Create a new gateway client
     pub fn new() -> Self {
@@ -276,6 +287,18 @@ impl GatewayClient {
                     }
                     Err(e) => {
                         tracing::warn!("Failed to create Anthropic client: {}", e);
+                        None
+                    }
+                }
+            }
+            "groq" => {
+                match peridot_model_gateway::create_groq_client(config_manager).await {
+                    Ok(client) => {
+                        tracing::info!("Groq client created successfully");
+                        Some(Box::new(client))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create Groq client: {}", e);
                         None
                     }
                 }
@@ -457,6 +480,14 @@ impl GatewayClient {
         })?;
 
         provider.validate_credentials().await.map_err(|e| e.to_string())
+    }
+
+    /// Get the provider client for direct inference
+    ///
+    /// This allows external components to perform inference directly
+    /// using the configured provider.
+    pub fn provider(&self) -> Option<&Box<dyn Provider>> {
+        self.provider.as_ref()
     }
 }
 

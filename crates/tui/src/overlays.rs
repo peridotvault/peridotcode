@@ -73,7 +73,12 @@ impl ProviderPickerState {
                 ProviderOption::available(
                     "openrouter",
                     "OpenRouter",
-                    "Access 200+ models from one API key  ★ Recommended",
+                    "Access 200+ models one API key  ★ Recommended",
+                ),
+                ProviderOption::available(
+                    "groq",
+                    "Groq",
+                    "Ultra-fast inference  ⚡ Free credits",
                 ),
                 ProviderOption::coming_soon("anthropic", "Anthropic (Direct)"),
                 ProviderOption::coming_soon("openai", "OpenAI / ChatGPT"),
@@ -139,6 +144,7 @@ impl ApiKeyInputState {
     pub fn with_key(id: &str, label: &str, key: String) -> Self {
         let key_url = match id {
             "openrouter" => "https://openrouter.ai/keys",
+            "groq"       => "https://console.groq.com/keys",
             "anthropic"  => "https://console.anthropic.com/keys",
             "openai"     => "https://platform.openai.com/api-keys",
             _            => "See your provider's dashboard",
@@ -251,7 +257,7 @@ impl ModelPickerState {
             groups.push((label.clone(), entries));
         }
 
-        // Position cursor on the active model if any
+        // Position cursor on the last item (or active model if any)
         let cursor = flat.iter().enumerate()
             .find(|(_, &enc)| {
                 let g = enc / 1000;
@@ -262,7 +268,7 @@ impl ModelPickerState {
                     .unwrap_or(false)
             })
             .map(|(i, _)| i)
-            .unwrap_or(0);
+            .unwrap_or(flat.len().saturating_sub(1));
 
         let _ = flat_idx; // suppress warning
         Self { groups, flat, cursor, filter: String::new(), filter_active: false }

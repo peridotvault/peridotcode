@@ -88,6 +88,11 @@ impl ProviderId {
         ProviderId("gemini".to_string())
     }
 
+    /// Groq provider ID
+    pub fn groq() -> Self {
+        ProviderId("groq".to_string())
+    }
+
     /// Local/Ollama provider ID (future)
     pub fn local() -> Self {
         ProviderId("local".to_string())
@@ -292,10 +297,7 @@ impl ProviderRegistry {
     pub fn mvp_providers() -> Vec<ProviderId> {
         vec![
             ProviderId::openrouter(),
-            // Future providers:
-            // ProviderId::openai(),
-            // ProviderId::anthropic(),
-            // ProviderId::gemini(),
+            ProviderId::groq(),
         ]
     }
 

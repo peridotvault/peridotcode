@@ -17,6 +17,7 @@ peridot-model-gateway = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 regex = "1.12.3"
+serde = { workspace = true }
 serde_json.workspace = true
 
 [dev-dependencies]

@@ -501,9 +501,13 @@ impl App {
                             // Persist to config manager
                             if let Some(ref mut mgr) = self.config_manager {
                                 mgr.set_provider_key(provider_id.clone(), &api_key);
-                                if mgr.config().default_model.is_none() {
-                                    mgr.set_model(peridot_model_gateway::ModelId::new("anthropic/claude-3.5-sonnet"));
-                                }
+                                // Force switch to newly connected provider
+                                mgr.set_default_provider(provider_id.clone());
+                                let default_model = match provider_id.as_str() {
+                                    "groq" => "groq/compound",
+                                    _ => "anthropic/claude-3.5-sonnet",
+                                };
+                                mgr.set_model(peridot_model_gateway::ModelId::new(default_model));
                                 if let Err(e) = mgr.save() {
                                     error_to_trigger = Some(("Save Failed".to_string(), format!("Failed to save configuration: {}", e)));
                                 } else {
@@ -517,8 +521,13 @@ impl App {
                                 use peridot_model_gateway::{GatewayConfig, ProviderConfig, ModelId};
                                 let mut cfg = GatewayConfig::new();
                                 cfg.set_provider(provider_id.clone(), ProviderConfig::with_api_key(&api_key));
+                                // Explicitly set as default provider
                                 cfg.default_provider = Some(provider_id.clone());
-                                cfg.default_model = Some(ModelId::new("anthropic/claude-3.5-sonnet"));
+                                let default_model_id = match provider_id.as_str() {
+                                    "groq" => "groq/compound",
+                                    _ => "anthropic/claude-3.5-sonnet",
+                                };
+                                cfg.default_model = Some(ModelId::new(default_model_id));
                                 let mgr = peridot_model_gateway::ConfigManager::with_config(cfg);
                                 if let Err(e) = mgr.save() {
                                     error_to_trigger = Some(("Save Failed".to_string(), format!("Failed to save configuration: {}", e)));
@@ -986,8 +995,12 @@ impl App {
                         provider.clone(),
                         ProviderConfig::with_api_key(api_key),
                     );
-                    cfg.default_provider = Some(provider);
-                    cfg.default_model = Some(ModelId::new("anthropic/claude-3.5-sonnet"));
+                    cfg.default_provider = Some(provider.clone());
+                    let default_model = match provider.as_str() {
+                        "groq" => "groq/compound",
+                        _ => "anthropic/claude-3.5-sonnet",
+                    };
+                    cfg.default_model = Some(ModelId::new(default_model));
                     let manager = ConfigManager::with_config(cfg);
                     let client = peridot_core::gateway_integration::GatewayClient::from_config_manager(&manager).await;
                     let _ = tx.send(client.validate_network().await);
@@ -1168,29 +1181,68 @@ impl App {
     async fn open_model_picker_async(&mut self) {
         tracing::info!("Building model picker catalog from API...");
         
-        // Try to fetch models from OpenRouter API
         let catalog = if let Some(ref config_manager) = self.config_manager {
-            // Get credentials and create client
-            let provider_id = peridot_model_gateway::ProviderId::openrouter();
-            if let Ok(Some(api_key)) = config_manager.resolve_credentials(&provider_id) {
-                match peridot_model_gateway::OpenRouterClient::new(api_key) {
-                    Ok(client) => {
-                        peridot_model_gateway::ModelCatalog::from_openrouter_api(&client).await
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to create OpenRouter client: {}. Using static list.", e);
-                        peridot_model_gateway::ModelCatalog::with_recommended()
+            // Get the current default provider from config
+            let provider_id = match config_manager.config().default_provider.clone() {
+                Some(p) => p,
+                None => {
+                    tracing::warn!("No default provider configured. Using static list.");
+                    return self.open_model_picker_static();
+                }
+            };
+            
+            tracing::info!("Listing models for provider: {}", provider_id);
+            
+            // Fetch models based on the current provider
+            match provider_id.as_str() {
+                "openrouter" => {
+                    if let Ok(Some(api_key)) = config_manager.resolve_credentials(&provider_id) {
+                        match peridot_model_gateway::OpenRouterClient::new(api_key) {
+                            Ok(client) => peridot_model_gateway::ModelCatalog::from_openrouter_api(&client).await,
+                            Err(e) => {
+                                tracing::warn!("Failed to create OpenRouter client: {}. Using static list.", e);
+                                return self.open_model_picker_static();
+                            }
+                        }
+                    } else {
+                        tracing::warn!("No API key for OpenRouter. Using static list.");
+                        return self.open_model_picker_static();
                     }
                 }
-            } else {
-                tracing::warn!("No API key available. Using static model list.");
-                peridot_model_gateway::ModelCatalog::with_recommended()
+                "groq" => {
+                    // Use static model list for Groq (more reliable)
+                    let models = peridot_model_gateway::groq::static_model_list();
+                    let mut catalog = peridot_model_gateway::ModelCatalog::with_recommended();
+                    for m in models {
+                        let descriptor = peridot_model_gateway::ModelDescriptor::new(
+                            m.id,
+                            m.name,
+                            m.provider,
+                            m.context_window.unwrap_or(128_000),
+                        );
+                        catalog.add(descriptor);
+                    }
+                    catalog
+                }
+                _ => {
+                    tracing::warn!("Provider {} not supported for model listing. Using static list.", provider_id);
+                    return self.open_model_picker_static();
+                }
             }
         } else {
             tracing::warn!("No config manager. Using static model list.");
-            peridot_model_gateway::ModelCatalog::with_recommended()
+            return self.open_model_picker_static();
         };
         
+        self.finish_model_picker_open(catalog);
+    }
+    
+    fn open_model_picker_static(&mut self) {
+        let catalog = peridot_model_gateway::ModelCatalog::with_recommended();
+        self.finish_model_picker_open(catalog);
+    }
+    
+    fn finish_model_picker_open(&mut self, catalog: peridot_model_gateway::ModelCatalog) {
         let grouped = catalog.grouped_by_provider();
         let active = self.model_info.as_deref();
         let group_count = grouped.len();
@@ -1216,66 +1268,31 @@ impl App {
         
         if let Some(ref mut mgr) = self.config_manager {
             mgr.set_model(ModelId::new(&model_id));
-            let save_result = mgr.save();
-            if let Err(e) = &save_result {
-                self.trigger_error("Save Failed", format!("Failed to save model configuration: {}", e));
+            if let Err(e) = mgr.save() {
+                self.trigger_error("Save Failed", format!("Failed to save model config: {}", e));
                 return;
             }
-            tracing::info!("Model configuration saved successfully");
+            tracing::info!("Model saved: {}", model_id);
+            self.model_info = Some(model_id.clone());
             
-            // Verify the model was saved by reloading
-            match ConfigManager::initialize() {
-                Ok(verified_mgr) => {
-                    let verified_model = verified_mgr.config().default_model.clone();
-                    tracing::info!("Verified saved model: {:?}", verified_model);
-                    self.config_manager = Some(verified_mgr);
-                }
-                Err(e) => {
-                    tracing::warn!("Could not verify saved configuration: {}", e);
-                }
-            }
-        } else {
-            self.trigger_error("Config Error", "No configuration manager available when switching models!");
-            return;
-        }
-        
-        self.model_info = Some(model_id.clone());
-        
-        // Re-initialize orchestrator with new model
-        // NOTE: We spawn a task instead of using block_on because we're already in an async context
-        tracing::info!("Spawning async task to re-initialize orchestrator with new model...");
-        let model_id_for_task = model_id.clone();
-        
-        tokio::spawn(async move {
-            // Reload from disk to get a fresh copy
-            if let Ok(mgr_to_use) = peridot_model_gateway::ConfigManager::initialize() {
-                match OrchestratorHandle::new_with_client(mgr_to_use).await {
-                    Ok(new_orch) => {
-                        if new_orch.has_ai() {
-                            tracing::info!("Orchestrator re-initialized successfully with new model");
-                        } else {
-                            tracing::warn!("Model saved but AI not ready: {}", model_id_for_task);
+            // Reload config to get updated model
+            if let Ok(new_mgr) = ConfigManager::initialize() {
+                // Reinitialize orchestrator with new model in background
+                let model_clone = model_id.clone();
+                tokio::spawn(async move {
+                    match OrchestratorHandle::new_with_client(new_mgr).await {
+                        Ok(new_orch) => {
+                            tracing::info!("Orchestrator refreshed with model: {}", model_clone);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Could not refresh orchestrator: {}", e);
                         }
                     }
-                    Err(e) => {
-                        tracing::error!("Model saved ({}) but orchestrator init failed: {}", model_id_for_task, e);
-                    }
-                }
+                });
             }
-        });
+        }
         
-        // Update status message immediately (orchestrator will be ready on next use)
-        self.status_message = format!(
-            "✓ Model switched to: {} | Ready to generate",
-            model_id
-        );
-        
-        // Refresh config_manager from disk
-        self.config_manager = peridot_model_gateway::ConfigManager::initialize().ok();
-        
-        // Also refresh orchestrator reference for next usage
-        // This is done lazily - the orchestrator will be re-created on the next API call
-        // with the new model from the config
+        self.status_message = format!("✓ Model: {} | Ready", model_id);
     }
 
     fn handle_welcome_keys(&mut self, key: event::KeyEvent) {
