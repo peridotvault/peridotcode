@@ -1,6 +1,6 @@
 {
   "template_name": "vanilla_js_arcade_shooter",
-  "engine": "vanilla_js",
+  "engine": "custom",
   "description": "A classic arcade space shooter using pure HTML5 Canvas API with no dependencies",
   "features": [
     "canvas_rendering",

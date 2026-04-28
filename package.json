@@ -1,0 +1,16 @@
+{
+  "name": "peridotcode",
+  "version": "0.1.0",
+  "description": "A game created with PeridotCode",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "phaser": "^3.70.0"
+  },
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}

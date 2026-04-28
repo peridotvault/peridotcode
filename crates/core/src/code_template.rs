@@ -40,6 +40,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+// ─────────────────────────────────────────────────────────────────
+// Embedded Templates
+//
+// These templates are compiled into the binary so that `cargo install`
+// produces a self-contained executable. Disk-based templates in
+// `./templates` or next to the exe still load afterwards and can
+// override or supplement these defaults.
+// ─────────────────────────────────────────────────────────────────
+
+const EMBEDDED_TEMPLATES: &[&str] = &[
+    include_str!("../../../templates/phaser_2d_starter.json"),
+    include_str!("../../../templates/macroquad_2d_platformer.json"),
+    include_str!("../../../templates/bevy_2d_minimal.json"),
+    include_str!("../../../templates/vanilla_js_platformer.json"),
+    include_str!("../../../templates/vanilla_js_shooter.json"),
+];
+
 /// A JSON-based code template
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeTemplate {
@@ -392,10 +409,39 @@ pub struct ScaffoldGenerator {
 
 impl ScaffoldGenerator {
     /// Create a new scaffold generator
+    ///
+    /// Automatically loads embedded templates so the binary is usable
+    /// immediately after `cargo install` without requiring external
+    /// template files.
     pub fn new() -> Self {
-        Self {
+        let mut generator = Self {
             registry: CodeTemplateRegistry::new(),
+        };
+        generator.load_embedded_templates();
+        generator
+    }
+
+    /// Load templates compiled into the binary via `include_str!`
+    fn load_embedded_templates(&mut self) {
+        for (i, json) in EMBEDDED_TEMPLATES.iter().enumerate() {
+            match CodeTemplate::from_json(json) {
+                Ok(template) => {
+                    tracing::info!(
+                        "Loaded embedded template: {} ({})",
+                        template.template_name,
+                        template.engine
+                    );
+                    self.registry.register(template);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse embedded template #{}: {}", i, e);
+                }
+            }
         }
+        tracing::info!(
+            "Embedded templates loaded: {} total",
+            self.registry.list().len()
+        );
     }
 
     /// Create with templates from a directory

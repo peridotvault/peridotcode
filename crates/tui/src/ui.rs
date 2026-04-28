@@ -1,11 +1,12 @@
 //! UI Rendering
 //!
-//! Functions for rendering the TUI using ratatui.
-//! Multi-panel layout: main content, task log, file summary
+//! Clean, professional terminal interface for PeridotCode.
+//! Three-panel layout: main content, activity log, file changes.
 
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
@@ -13,95 +14,313 @@ use ratatui::{
 
 use crate::app::{App, AppState};
 use crate::overlays::{ApiKeyStatus, OverlayState};
+
 /// Draw the full UI with all panels
 pub fn draw(f: &mut Frame, app: &mut App) {
-    // Create main layout: content area + status bar
+    let area = f.area();
+
+    // Main vertical split: content + status bar
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(0)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
-        .split(f.area());
+        .split(area);
 
-    // Split content area into left (main) and right (side panels)
+    // Horizontal split: main panel (left) | sidebar (right)
     let content_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+        .constraints([Constraint::Ratio(2, 3), Constraint::Ratio(1, 3)])
         .split(main_chunks[0]);
 
-    // Split right panel into task log and file summary
-    let right_chunks = Layout::default()
+    // Sidebar vertical split: task log (top) | files (bottom)
+    let sidebar_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
         .split(content_chunks[1]);
 
-    // Draw main content area
+    // Draw panels
     draw_main_panel(f, app, content_chunks[0]);
-
-    // Draw task log panel
-    draw_task_log_panel(f, app, right_chunks[0]);
-
-    // Draw file summary panel
-    draw_file_summary_panel(f, app, right_chunks[1]);
-
-    // Draw status bar
+    draw_task_log_panel(f, app, sidebar_chunks[0]);
+    draw_file_summary_panel(f, app, sidebar_chunks[1]);
     draw_status_bar(f, app, main_chunks[1]);
 
     // Draw overlay on top (if any)
     draw_overlay(f, app);
 }
 
-/// Draw main content panel
+// ─────────────────────────────────────────────────────────────────
+// Main Panel
+// ─────────────────────────────────────────────────────────────────
+
 fn draw_main_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(" PeridotCode ")
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(Color::DarkGray))
+        .border_set(border::ROUNDED);
 
-    let content = match app.state() {
-        AppState::Welcome => render_welcome(app),
-        AppState::Input => render_input(app),
-        AppState::Processing => render_processing(app),
-        AppState::Results => render_results(app),
-    };
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(paragraph, area);
-
-    // Set cursor position if in input mode
-    if *app.state() == AppState::Input {
-        let input_area = area.inner(Margin::new(1, 1));
-        let prompt_lines = 2; // "Describe..." + blank line
-        let cursor_x = input_area.x + app.cursor_position() as u16;
-        let cursor_y = input_area.y + prompt_lines;
-
-        if cursor_y < input_area.bottom() {
-            f.set_cursor_position((cursor_x, cursor_y));
-        }
+    match app.state() {
+        AppState::Welcome => render_welcome(f, app, inner),
+        AppState::Input => render_input(f, app, inner),
+        AppState::Processing => render_processing(f, app, inner),
+        AppState::Results => render_results(f, app, inner),
     }
 }
 
-/// Draw the task log panel
+fn render_welcome(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(
+            Span::styled("Welcome to PeridotCode", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        ),
+        Line::from(""),
+    ];
+
+    // Project info
+    lines.push(Line::from(vec![
+        Span::styled("Project: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{}", app.project_path().display()), Style::default().fg(Color::White)),
+    ]));
+    lines.push(Line::from(""));
+
+    // AI Status
+    if let (Some(provider), Some(model)) = (app.provider_info(), app.model_info()) {
+        lines.push(Line::from(vec![
+            Span::styled("AI Provider: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(provider.to_string(), Style::default().fg(Color::Green)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("Model: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(model.to_string(), Style::default().fg(Color::Yellow)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("AI: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Not configured", Style::default().fg(Color::Red)),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "Type /connect to set up your API key",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Describe a game idea and press Enter to generate.",
+        Style::default().fg(Color::White),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Examples: 'create a platformer', 'add jumping mechanics'",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn render_input(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Describe your game idea:",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    // Input text
+    let input = app.input_buffer();
+    if input.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "Type your prompt here...",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            input.to_string(),
+            Style::default().fg(Color::White),
+        )));
+    }
+
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+
+    // Cursor
+    let cursor_x = area.x + 1;
+    let cursor_y = area.y + 3;
+    if cursor_y < area.bottom() {
+        f.set_cursor_position((cursor_x + app.cursor_position() as u16, cursor_y));
+    }
+}
+
+fn render_processing(f: &mut Frame, app: &App, area: Rect) {
+    const SPINNER_FRAMES: &[&str] = &["◐", "◓", "◑", "◒"];
+    let frame = SPINNER_FRAMES[app.spinner_tick() % SPINNER_FRAMES.len()];
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("{} Processing...", frame),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from("The AI is analyzing your prompt and generating files."),
+        Line::from("This may take a moment depending on complexity."),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+fn render_results(f: &mut Frame, app: &App, area: Rect) {
+    let mut lines = Vec::new();
+
+    // Header
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Done",
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+
+    // File summary
+    let file_count = app.file_summary().len();
+    if file_count > 0 && !app.file_summary()[0].starts_with("No ") {
+        let created = app.file_summary().iter().filter(|f| f.starts_with('+')).count();
+        let modified = app.file_summary().iter().filter(|f| f.starts_with('~')).count();
+
+        let summary = if modified > 0 {
+            format!("{} created, {} modified", created, modified)
+        } else {
+            format!("{} file{} created", created, if created == 1 { "" } else { "s" })
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled("Files: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(summary, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+
+        // List files with cleaner formatting
+        for file in app.file_summary() {
+            let (icon, color) = if file.starts_with('+') {
+                ("+", Color::Green)
+            } else if file.starts_with('~') {
+                ("~", Color::Yellow)
+            } else if file.starts_with('-') {
+                ("-", Color::Red)
+            } else {
+                (" ", Color::White)
+            };
+
+            let clean_name = file.trim_start_matches("+ ").trim_start_matches("~ ").trim_start_matches("- ");
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(clean_name.to_string(), Style::default().fg(Color::White)),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            "No files were changed.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    // AI Reasoning section
+    if let Some(reasoning) = app.ai_reasoning() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Reasoning",
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+        )));
+        for line in reasoning.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", trimmed),
+                    Style::default().fg(Color::Gray),
+                )));
+            }
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Next steps:",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from("  npm install"));
+    lines.push(Line::from("  npm run dev"));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press 'n' for new prompt, 'q' to quit",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, area);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Sidebar Panels
+// ─────────────────────────────────────────────────────────────────
+
 fn draw_task_log_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
-        .title(" Task Log (Click to select, double-click to copy) ")
+        .title(" Activity ")
+        .title_style(Style::default().fg(Color::Yellow))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_style(Style::default().fg(Color::DarkGray))
+        .border_set(border::ROUNDED);
 
-    let selected_index = app.selected_log_index();
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
     let items: Vec<ListItem> = app
         .task_log()
         .iter()
         .enumerate()
         .map(|(idx, msg)| {
-            let mut item = ListItem::new(msg.as_str());
-            // Highlight selected item
-            if selected_index == Some(idx) {
+            let content = if msg.starts_with("ERROR") {
+                Line::from(vec![
+                    Span::styled("● ", Style::default().fg(Color::Red)),
+                    Span::styled(msg.to_string(), Style::default().fg(Color::Red)),
+                ])
+            } else if msg.starts_with("> ") {
+                Line::from(vec![
+                    Span::styled("▸ ", Style::default().fg(Color::Cyan)),
+                    Span::styled(msg.trim_start_matches("> ").to_string(), Style::default().fg(Color::White)),
+                ])
+            } else if msg.starts_with("Plan:") || msg.starts_with("Intent:") {
+                Line::from(vec![
+                    Span::styled("◆ ", Style::default().fg(Color::Blue)),
+                    Span::styled(msg.to_string(), Style::default().fg(Color::DarkGray)),
+                ])
+            } else if msg.starts_with("Reasoning:") {
+                Line::from(vec![
+                    Span::styled("◈ ", Style::default().fg(Color::Magenta)),
+                    Span::styled(msg.to_string(), Style::default().fg(Color::Gray)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(msg.to_string(), Style::default().fg(Color::Gray)),
+                ])
+            };
+
+            let mut item = ListItem::new(content);
+            if app.selected_log_index() == Some(idx) {
                 item = item.style(
                     Style::default()
-                        .fg(Color::Cyan)
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),
                 );
@@ -110,35 +329,47 @@ fn draw_task_log_panel(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(block);
-
-    f.render_widget(list, area);
+    let list = List::new(items);
+    f.render_widget(list, inner);
 }
 
-/// Draw the file summary panel
 fn draw_file_summary_panel(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
-        .title(" Files (Click to select, double-click to copy) ")
+        .title(" Files ")
+        .title_style(Style::default().fg(Color::Green))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
+        .border_style(Style::default().fg(Color::DarkGray))
+        .border_set(border::ROUNDED);
 
-    let selected_index = app.selected_file_index();
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
     let items: Vec<ListItem> = app
         .file_summary()
         .iter()
         .enumerate()
         .map(|(idx, file)| {
-            let content = if file.starts_with("No ") {
-                file.clone()
+            let (icon, color) = if file.starts_with('+') {
+                ("+", Color::Green)
+            } else if file.starts_with('~') {
+                ("~", Color::Yellow)
+            } else if file.starts_with('-') {
+                ("-", Color::Red)
             } else {
-                format!("  {}", file)
+                ("•", Color::DarkGray)
             };
+
+            let clean = file.trim_start_matches("+ ").trim_start_matches("~ ").trim_start_matches("- ").trim_start_matches("• ");
+
+            let content = Line::from(vec![
+                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(clean.to_string(), Style::default().fg(Color::White)),
+            ]);
+
             let mut item = ListItem::new(content);
-            // Highlight selected item
-            if selected_index == Some(idx) {
+            if app.selected_file_index() == Some(idx) {
                 item = item.style(
                     Style::default()
-                        .fg(Color::Green)
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD),
                 );
@@ -147,209 +378,68 @@ fn draw_file_summary_panel(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items).block(block);
-
-    f.render_widget(list, area);
+    let list = List::new(items);
+    f.render_widget(list, inner);
 }
 
-/// Draw the status bar
+// ─────────────────────────────────────────────────────────────────
+// Status Bar
+// ─────────────────────────────────────────────────────────────────
+
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let status_style = Style::default()
-        .bg(Color::Blue)
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD);
+    let state = app.state().display_name();
+    let status = app.status_message();
 
-    let state_style = Style::default().bg(Color::Black).fg(Color::White);
-
-    let text = Text::from(vec![Line::from(vec![
-        Span::styled(format!(" [{}] ", app.state().display_name()), state_style),
-        Span::raw(" "),
-        Span::styled(app.status_message(), status_style),
-        Span::raw(" "),
-        Span::styled(
-            format!(" | {} ", app.project_path().display()),
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-    ])]);
-
-    let paragraph = Paragraph::new(text);
-
-    f.render_widget(paragraph, area);
-}
-
-/// Render welcome screen content
-fn render_welcome(app: &App) -> Text<'_> {
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  PeridotCode  ",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(format!("  Project: {}", app.project_path().display())),
-        Line::from(""),
-    ];
-
-    if let Some(provider) = app.provider_info() {
-        lines.push(Line::from(vec![
-            Span::from("  "),
-            Span::styled(provider, Style::default().fg(Color::Green)),
-        ]));
-    }
-
-    if let Some(model) = app.model_info() {
-        lines.push(Line::from(vec![
-            Span::from("  Model: "),
-            Span::styled(model, Style::default().fg(Color::Yellow)),
-        ]));
-    }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from("  Build games with prompts."));
-    lines.push(Line::from(""));
-    lines.push(Line::from("  Enter to start, /connect to setup, /models to change"));
-
-Text::from(lines)
-}
-
-/// Render input screen content
-fn render_input(app: &App) -> Text<'_> {
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Your Game Idea:",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-
-    let input = app.input_buffer();
-    if input.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  Type here...",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else {
-        for line in input.lines() {
-            lines.push(Line::from(Span::styled(
-                format!("  {}", line),
-                Style::default().fg(Color::White),
-            )));
-        }
-    }
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "  /platformer /puzzle /shooter etc.",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "  Enter submit  |  Esc back",
-        Style::default().fg(Color::Yellow),
-    )));
-
-    Text::from(lines)
-}
-
-/// Render processing screen content
-fn render_processing(app: &App) -> Text<'_> {
-    const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let frame = SPINNER_FRAMES[app.spinner_tick() % SPINNER_FRAMES.len()];
-
-    Text::from(vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("{} Processing your request...", frame),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from("The AI is analyzing your prompt and preparing"),
-        Line::from("the game scaffold. This may take a moment."),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press Esc or Ctrl+C to cancel.",
-            Style::default().fg(Color::DarkGray),
-        )),
-    ])
-}
-
-/// Render results screen content
-fn render_results(app: &App) -> Text<'_> {
-    let file_count = app.file_summary().len();
-
-    // Check if we have modifications (existing files changed) vs new files created
-    let has_modified_files = app.file_summary().iter().any(|f| f.contains("~"));
-    let has_new_files = app.file_summary().iter().any(|f| f.contains("+"));
-
-    let (title, description) = if has_modified_files && !has_new_files {
-        (
-            "✓ Changes applied successfully!",
-            format!("Modified {} file(s).", file_count),
-        )
-    } else if has_modified_files && has_new_files {
-        (
-            "✓ Project updated successfully!",
-            format!(
-                "Created {} new file(s) and modified existing files.",
-                file_count
-            ),
-        )
-    } else {
-        (
-            "✓ Project generated successfully!",
-            format!("Created {} file(s).", file_count),
-        )
+    // State badge color
+    let state_color = match app.state() {
+        AppState::Welcome => Color::Blue,
+        AppState::Input => Color::Green,
+        AppState::Processing => Color::Yellow,
+        AppState::Results => Color::Cyan,
     };
 
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            title,
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-        Line::from(description),
-        Line::from(""),
-        Line::from("Next steps:"),
-        Line::from("  1. Run: npm install"),
-        Line::from("  2. Run: npm run dev"),
-        Line::from(""),
+    let left_spans = vec![
+        Span::styled(format!(" {} ", state), Style::default().bg(state_color).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(" ", Style::default()),
+        Span::styled(status.to_string(), Style::default().fg(Color::White)),
     ];
 
-    // Show copy feedback if recent
-    if let Some(copied) = app.last_copied_content() {
-        lines.push(Line::from(vec![
-            Span::styled("✓ Copied to clipboard: ", Style::default().fg(Color::Green)),
-            Span::styled(
-                &copied[..copied.len().min(50)],
-                Style::default().fg(Color::Cyan),
-            ),
-        ]));
-        lines.push(Line::from(""));
-    }
+    let path_text = format!("{} ", app.project_path().display());
+    let path_span = Span::styled(path_text.clone(), Style::default().fg(Color::DarkGray));
 
-    lines.push(Line::from("Press 'n' for new prompt, 'q' to quit."));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "Shortcuts: Ctrl+C=copy last, Ctrl+Shift+A=copy all, Esc/q=quit",
-        Style::default().fg(Color::DarkGray),
-    )));
+    // Render left part
+    let left_line = Line::from(left_spans);
+    let left_para = Paragraph::new(left_line);
+    f.render_widget(left_para, area);
 
-    Text::from(lines)
+    // Render right-aligned path
+    let path_len = path_text.len() as u16;
+    let path_area = Rect {
+        x: area.x + area.width.saturating_sub(path_len),
+        y: area.y,
+        width: path_len,
+        height: 1,
+    };
+    let path_para = Paragraph::new(Text::from(vec![Line::from(vec![path_span])]));
+    f.render_widget(path_para, path_area);
 }
 
-/// Create a centered rect
+// ─────────────────────────────────────────────────────────────────
+// Overlays
+// ─────────────────────────────────────────────────────────────────
+
+fn draw_overlay(f: &mut Frame, app: &App) {
+    match app.overlay() {
+        OverlayState::None => {}
+        OverlayState::ProviderPicker(state) => draw_provider_picker(f, state),
+        OverlayState::ApiKeyInput(state) => draw_api_key_input(f, state),
+        OverlayState::ModelPicker(state) => draw_model_picker(f, state),
+        OverlayState::ErrorModal(state) => draw_error_modal(f, state),
+    }
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
+    let popup = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Percentage((100 - percent_y) / 2),
@@ -365,33 +455,20 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage(percent_x),
             Constraint::Percentage((100 - percent_x) / 2),
         ])
-        .split(popup_layout[1])[1]
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Overlay rendering
-// ─────────────────────────────────────────────────────────────────
-
-/// Dispatch to the correct overlay renderer
-fn draw_overlay(f: &mut Frame, app: &App) {
-    match app.overlay() {
-        OverlayState::None => {}
-        OverlayState::ProviderPicker(state) => draw_provider_picker_overlay(f, state),
-        OverlayState::ApiKeyInput(state) => draw_api_key_input_overlay(f, state),
-        OverlayState::ModelPicker(state) => draw_model_picker_overlay(f, state),
-        OverlayState::ErrorModal(state) => draw_error_modal(f, state),
-    }
+        .split(popup[1])[1]
 }
 
 fn draw_error_modal(f: &mut Frame, state: &crate::overlays::ErrorModalState) {
-    let area = centered_rect(50, 30, f.area());
+    let area = centered_rect(55, 35, f.area());
     f.render_widget(Clear, area);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Red))
         .title(format!(" {} ", state.title))
-        .title_alignment(Alignment::Center);
+        .title_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+        .title_alignment(Alignment::Center)
+        .border_set(border::ROUNDED);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -402,29 +479,32 @@ fn draw_error_modal(f: &mut Frame, state: &crate::overlays::ErrorModalState) {
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(inner);
 
-    let message = Paragraph::new(state.message.as_str())
-        .wrap(Wrap { trim: true })
-        .alignment(Alignment::Center);
-
-    f.render_widget(message, chunks[0]);
+    f.render_widget(
+        Paragraph::new(state.message.as_str())
+            .wrap(Wrap { trim: true })
+            .alignment(Alignment::Center),
+        chunks[0],
+    );
 
     f.render_widget(
-        Paragraph::new("Press Esc or Enter to close")
+        Paragraph::new("Press Esc or Enter to dismiss")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[1],
     );
 }
 
-fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::ProviderPickerState) {
+fn draw_provider_picker(f: &mut Frame, state: &crate::overlays::ProviderPickerState) {
     let area = centered_rect(55, 45, f.area());
     f.render_widget(Clear, area);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Connect a Provider ")
-        .title_alignment(Alignment::Center);
+        .title(" Connect Provider ")
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .title_alignment(Alignment::Center)
+        .border_set(border::ROUNDED);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -434,75 +514,65 @@ fn draw_provider_picker_overlay(f: &mut Frame, state: &crate::overlays::Provider
         .iter()
         .enumerate()
         .map(|(i, opt)| {
-            let prefix = if i == state.cursor { "▶" } else { " " };
-            let label = if opt.enabled {
-                format!("{} {}", prefix, opt.label)
+            let prefix = if i == state.cursor { "▶" } else { "  " };
+            let (label_style, desc) = if opt.enabled {
+                (
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    opt.description.as_str(),
+                )
             } else {
-                format!("{} {}  [coming soon]", prefix, opt.label)
+                (
+                    Style::default().fg(Color::DarkGray),
+                    "Coming soon",
+                )
             };
-            let style = if i == state.cursor && opt.enabled {
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else if !opt.enabled {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            let desc_style = Style::default().fg(Color::DarkGray);
+
             ListItem::new(vec![
-                Line::from(Span::styled(label, style)),
-                Line::from(Span::styled(
-                    format!("   {}", opt.description),
-                    desc_style,
-                )),
+                Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(Color::Cyan)),
+                    Span::styled(" ", Style::default()),
+                    Span::styled(opt.label.clone(), label_style),
+                ]),
+                Line::from(vec![
+                    Span::styled("     ", Style::default()),
+                    Span::styled(desc.to_string(), Style::default().fg(Color::DarkGray)),
+                ]),
             ])
         })
         .collect();
 
-    let list = List::new(items);
-    let help_area = Layout::default()
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(inner);
 
-    f.render_widget(list, help_area[0]);
+    f.render_widget(List::new(items), chunks[0]);
     f.render_widget(
-        Paragraph::new("↑↓ navigate  Enter select  Esc cancel")
+        Paragraph::new("↑↓ navigate  •  Enter select  •  Esc cancel")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center),
-        help_area[1],
+        chunks[1],
     );
 }
 
-fn draw_api_key_input_overlay(f: &mut Frame, state: &crate::overlays::ApiKeyInputState) {
+fn draw_api_key_input(f: &mut Frame, state: &crate::overlays::ApiKeyInputState) {
     let area = centered_rect(60, 40, f.area());
     f.render_widget(Clear, area);
 
-    let (border_color, title) = match &state.status {
-        ApiKeyStatus::Validating => (
-            Color::Yellow,
-            format!(" {} — Validating... ", state.provider_label),
-        ),
-        ApiKeyStatus::Valid => (
-            Color::Green,
-            format!(" {} — Connected! ✓ ", state.provider_label),
-        ),
-        ApiKeyStatus::Invalid(_) => (
-            Color::Red,
-            format!(" {} — Invalid Key ", state.provider_label),
-        ),
-        ApiKeyStatus::Idle => (
-            Color::Cyan,
-            format!(" {} — Enter API Key ", state.provider_label),
-        ),
+    let (border_color, title_text) = match &state.status {
+        ApiKeyStatus::Validating => (Color::Yellow, format!(" {} — Validating ", state.provider_label)),
+        ApiKeyStatus::Valid => (Color::Green, format!(" {} — Connected ", state.provider_label)),
+        ApiKeyStatus::Invalid(_) => (Color::Red, format!(" {} — Invalid ", state.provider_label)),
+        ApiKeyStatus::Idle => (Color::Cyan, format!(" {} — API Key ", state.provider_label)),
     };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
-        .title(title)
-        .title_alignment(Alignment::Center);
+        .title(title_text)
+        .title_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD))
+        .title_alignment(Alignment::Center)
+        .border_set(border::ROUNDED);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -519,62 +589,51 @@ fn draw_api_key_input_overlay(f: &mut Frame, state: &crate::overlays::ApiKeyInpu
         ])
         .split(inner);
 
-    // Key URL hint
     f.render_widget(
-        Paragraph::new(format!("Get your key: {}", state.key_url))
+        Paragraph::new(format!("Key URL: {}", state.key_url))
             .style(Style::default().fg(Color::DarkGray)),
         chunks[0],
     );
 
-    // Key input field
     let masked = state.masked_display();
     let is_empty = masked.is_empty();
-    let display = if is_empty {
-        "Enter your API key...".to_string()
-    } else {
-        masked
-    };
+    let display = if is_empty { "Enter API key..." } else { &masked };
     let key_style = if is_empty {
         Style::default().fg(Color::DarkGray)
     } else {
         Style::default().fg(Color::White)
     };
-    let key_block = Block::default()
+
+    let input_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
+
     f.render_widget(
-        Paragraph::new(display).style(key_style).block(key_block),
+        Paragraph::new(display).style(key_style).block(input_block),
         chunks[1],
     );
 
-    // Status message
-    let status_text = match &state.status {
-        ApiKeyStatus::Idle => "".to_string(),
-        ApiKeyStatus::Validating => "⣾ Validating with provider...".to_string(),
-        ApiKeyStatus::Valid => "✓ Key validated and saved!".to_string(),
-        ApiKeyStatus::Invalid(e) => format!("✗ {}", e),
+    let (status_text, status_color) = match &state.status {
+        ApiKeyStatus::Idle => ("", Color::DarkGray),
+        ApiKeyStatus::Validating => ("Validating...", Color::Yellow),
+        ApiKeyStatus::Valid => ("Connected", Color::Green),
+        ApiKeyStatus::Invalid(e) => (e.as_str(), Color::Red),
     };
-    let status_color = match &state.status {
-        ApiKeyStatus::Valid => Color::Green,
-        ApiKeyStatus::Invalid(_) => Color::Red,
-        ApiKeyStatus::Validating => Color::Yellow,
-        ApiKeyStatus::Idle => Color::DarkGray,
-    };
+
     f.render_widget(
         Paragraph::new(status_text).style(Style::default().fg(status_color)),
         chunks[2],
     );
 
-    // Help
     f.render_widget(
-        Paragraph::new("Enter submit | Esc back | Ctrl+V paste | (key is masked for safety)")
+        Paragraph::new("Enter submit  •  Esc back  •  Ctrl+V paste")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center),
         chunks[4],
     );
 }
 
-fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPickerState) {
+fn draw_model_picker(f: &mut Frame, state: &crate::overlays::ModelPickerState) {
     let area = centered_rect(70, 75, f.area());
     f.render_widget(Clear, area);
 
@@ -582,7 +641,9 @@ fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPicker
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan))
         .title(" Select Model ")
-        .title_alignment(Alignment::Center);
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .title_alignment(Alignment::Center)
+        .border_set(border::ROUNDED);
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -592,24 +653,17 @@ fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPicker
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(inner);
 
-    // Build flat list of items, counting cursor
+    let filter = state.filter.to_lowercase();
     let mut items: Vec<ListItem> = Vec::new();
     let mut flat_pos = 0usize;
 
-    // Apply filter
-    let filter = state.filter.to_lowercase();
-
     for (group_label, entries) in &state.groups {
-        // Section header
         items.push(ListItem::new(Line::from(vec![Span::styled(
             format!(" ─── {} ", group_label),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         )])));
 
         for entry in entries {
-            // Skip if filter active and doesn't match
             if !filter.is_empty()
                 && !entry.display_name.to_lowercase().contains(&filter)
                 && !entry.model_id.to_lowercase().contains(&filter)
@@ -619,30 +673,25 @@ fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPicker
             }
 
             let is_selected = flat_pos == state.cursor;
-            let (prefix, row_style) = if is_selected {
-                (
-                    "▶",
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )
+            let (prefix, name_style) = if is_selected {
+                ("▶", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
             } else {
                 (" ", Style::default().fg(Color::White))
             };
 
-            let active_marker = if entry.is_active { " [active]" } else { "" };
-            let tier_style = match entry.tier_symbol.as_str() {
-                "★" => Style::default().fg(Color::Yellow),
-                "✓" => Style::default().fg(Color::Green),
-                _ => Style::default().fg(Color::DarkGray),
+            let active = if entry.is_active { " [active]" } else { "" };
+            let tier_color = match entry.tier_symbol.as_str() {
+                "★" => Color::Yellow,
+                "✓" => Color::Green,
+                _ => Color::DarkGray,
             };
 
             items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!(" {} ", prefix), row_style),
-                Span::styled(entry.tier_symbol.clone(), tier_style),
-                Span::styled(format!(" {}", entry.display_name), row_style),
+                Span::styled(format!(" {} ", prefix), name_style),
+                Span::styled(entry.tier_symbol.clone(), Style::default().fg(tier_color)),
+                Span::styled(format!(" {}", entry.display_name), name_style),
                 Span::styled(
-                    format!("  {}{}", entry.cost_hint, active_marker),
+                    format!("  {}{}", entry.cost_hint, active),
                     Style::default().fg(Color::DarkGray),
                 ),
             ])));
@@ -654,10 +703,11 @@ fn draw_model_picker_overlay(f: &mut Frame, state: &crate::overlays::ModelPicker
     f.render_widget(List::new(items), chunks[0]);
 
     let help = if state.filter_active {
-        format!("Filter: {}  Esc clear", state.filter)
+        format!("Filter: '{}'  •  Esc clear", state.filter)
     } else {
-        "↑↓ navigate   Enter select   / filter   Esc close".to_string()
+        "↑↓ navigate  •  Enter select  •  / filter  •  Esc close".to_string()
     };
+
     f.render_widget(
         Paragraph::new(help)
             .style(Style::default().fg(Color::DarkGray))

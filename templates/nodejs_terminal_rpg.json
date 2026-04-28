@@ -1,6 +1,6 @@
 {
   "template_name": "nodejs_terminal_rpg",
-  "engine": "nodejs",
+  "engine": "custom",
   "description": "A text-based RPG adventure game that runs in the terminal using Node.js readline",
   "features": [
     "terminal_ui",

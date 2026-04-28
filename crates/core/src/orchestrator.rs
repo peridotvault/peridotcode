@@ -513,6 +513,7 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
         let mut file_changes = Vec::new();
         let mut change_summary = String::new();
         let mut completed_steps = 0;
+        let mut ai_reasoning: Option<String> = None;
 
         for step in &plan.steps {
             tracing::info!("Step: {}", step.description);
@@ -652,14 +653,18 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
                             tracing::info!("AI response received ({} tokens)", token_count);
                             
                             let result = engine.parse_response(&response_content);
-                            
-                            // Log any explanation from AI
+
+                            // Capture AI reasoning for display
                             if let Some(ref explanation) = result.explanation {
+                                let trimmed = explanation.trim();
+                                if !trimmed.is_empty() {
+                                    ai_reasoning = Some(trimmed.to_string());
+                                }
                                 tracing::info!("AI explanation: {}", explanation);
                             }
-                            
+
                             tracing::info!("AI suggested {} file modifications", result.modified_files.len());
-                            
+
                             // Apply modifications
                             for modification in result.modified_files {
                                 let path = &modification.path;
@@ -708,6 +713,7 @@ Respond with ONLY one of these exact words: create_game, add_feature, modify, or
                 "Run 'npm install' to install dependencies".to_string(),
                 "Run 'npm run dev' to start development server".to_string(),
             ],
+            ai_reasoning,
         })
     }
 
@@ -822,6 +828,13 @@ impl OrchestratorResult {
             .map(|r| r.instructions.as_slice())
             .unwrap_or(&[])
     }
+
+    /// Get AI reasoning / explanation text (if any)
+    pub fn ai_reasoning(&self) -> Option<&str> {
+        self.execution_result
+            .as_ref()
+            .and_then(|r| r.ai_reasoning.as_deref())
+    }
 }
 
 /// Result of plan execution
@@ -839,6 +852,8 @@ pub struct ExecutionResult {
     pub change_summary: String,
     /// Next steps for user
     pub instructions: Vec<String>,
+    /// AI reasoning / explanation text (if any)
+    pub ai_reasoning: Option<String>,
 }
 
 /// Handle for TUI integration with AI support

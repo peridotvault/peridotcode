@@ -93,6 +93,8 @@ pub struct App {
     mouse_position: Option<(u16, u16)>,
     /// Flag to trigger async model picker opening
     model_picker_pending: bool,
+    /// Full AI reasoning text from the last successful modification
+    ai_reasoning: Option<String>,
 }
 
 impl std::fmt::Debug for App {
@@ -125,6 +127,7 @@ impl std::fmt::Debug for App {
             .field("selected_file_index", &self.selected_file_index)
             .field("last_click_pos", &self.last_click_pos)
             .field("mouse_position", &self.mouse_position)
+            .field("ai_reasoning", &self.ai_reasoning.as_ref().map(|r| &r[..r.len().min(50)]))
             .finish()
     }
 }
@@ -170,6 +173,7 @@ impl App {
             last_click_time: None,
             mouse_position: None,
             model_picker_pending: false,
+            ai_reasoning: None,
         }
     }
 
@@ -280,6 +284,11 @@ impl App {
     /// Get spinner tick for animation
     pub fn spinner_tick(&self) -> usize {
         self.spinner_tick
+    }
+
+    /// Get AI reasoning text (if any)
+    pub fn ai_reasoning(&self) -> Option<&str> {
+        self.ai_reasoning.as_deref()
     }
 
     /// Get overlay state reference
@@ -646,6 +655,25 @@ impl App {
 
             if let Some(summary) = result.change_summary() {
                 self.task_log.push(format!("Changes: {}", summary));
+            }
+
+            // Add AI reasoning if available
+            self.ai_reasoning = None;
+            if let Some(reasoning) = result.ai_reasoning() {
+                let trimmed = reasoning.trim();
+                if !trimmed.is_empty() {
+                    self.ai_reasoning = Some(trimmed.to_string());
+                    // Add a short preview to task log
+                    let preview: String = trimmed
+                        .lines()
+                        .next()
+                        .unwrap_or(trimmed)
+                        .chars()
+                        .take(80)
+                        .collect();
+                    let ellipsis = if trimmed.len() > 80 { "..." } else { "" };
+                    self.task_log.push(format!("Reasoning: {}{}", preview, ellipsis));
+                }
             }
 
             // Add run instructions
@@ -1444,6 +1472,7 @@ impl App {
         self.last_spinner_update = Some(std::time::Instant::now());
         self.status_message = "Processing... Esc to cancel".to_string();
 
+        self.ai_reasoning = None;
         self.task_log.push(format!("> {}", prompt));
         self.task_log.push("Classifying intent...".to_string());
 

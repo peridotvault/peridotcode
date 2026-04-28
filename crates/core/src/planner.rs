@@ -171,7 +171,7 @@ impl Planner {
             "generate_scaffold",
             "Generating project scaffold",
             Action::GenerateScaffold {
-                template_id: "phaser-2d-starter".to_string(),
+                template_id: "phaser_2d_starter".to_string(),
             },
         ));
 

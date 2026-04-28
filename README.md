@@ -1,27 +1,21 @@
 # PeridotCode
 
-PeridotCode is a terminal-first AI game creation agent that generates playable Phaser 2D game prototypes from natural language prompts.
+Terminal-first AI game creation agent. Describe a game in plain text, get a working scaffold.
 
-![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+## What It Does
 
-## Features
+PeridotCode is a Rust CLI/TUI tool that turns natural language prompts into playable game prototypes. It classifies your intent, selects a template, generates files, and gives you run instructions.
 
-- **Natural Language Game Creation:** Describe your game in plain English and get a working prototype
-- **OpenCode-Style Editing:** Edit existing games with prompts just like OpenCode
-- **Multi-Provider AI Support:** Works with OpenRouter, OpenAI, Anthropic, and more
-- **Smart Context Awareness:** Reads your existing code and makes intelligent modifications
-- **Safe File Operations:** All changes are tracked and can be reviewed before applying
-- **Real-time Feedback:** See what files are being read and modified as you work
+**Current focus:** Phaser 2D HTML5 starters (embedded templates, no external files needed).
 
 ## Prerequisites
 
-- **Rust toolchain** (MSRV 1.78) for compiling the CLI.
-- **Node.js and npm** for running the generated Phaser 2D games locally.
+- **Rust** >= 1.78
+- **Node.js & npm** (for running the generated games)
 
 ## Installation
 
-### From Source (Recommended)
+### From Source
 
 ```bash
 git clone https://github.com/peridotvault/peridotcode.git
@@ -29,150 +23,87 @@ cd peridotcode
 cargo install --path crates/cli
 ```
 
-After building, the `peridotcode` binary will be available in your `~/.cargo/bin` directory, which is typically already on your `PATH`.
-You can then run `peridotcode` from anywhere.
+The `peridotcode` binary is placed in `~/.cargo/bin`. Make sure it is on your `PATH`.
 
-### Updating to Latest Version
+## Quick Start
 
-If you already have PeridotCode installed and want to update to the latest version:
+### 1. Configure an AI Provider
 
-```bash
-cd peridotcode
-git pull origin main
-cargo install --path crates/cli
-```
-
-The new version will automatically replace the old one.
-
-### Quick Install Script
-
-```bash
-curl -sSL https://raw.githubusercontent.com/peridotvault/peridotcode/main/install.sh | bash
-```
-
-## Quickstart
-
-### 1. First Time Setup
-
-Run `peridotcode` and follow the setup wizard:
+Run the TUI and use the `/connect` command:
 
 ```bash
 peridotcode
+# Type: /connect
 ```
 
-You'll be guided through:
-- Selecting an AI provider (OpenRouter recommended)
-- Entering your API key
-- Choosing your preferred model
-
-### 2. Create a New Game
+Or configure via CLI:
 
 ```bash
-# Create a new project directory
+peridotcode provider add openrouter --api-key YOUR_KEY --default
+```
+
+Supported providers: OpenRouter (recommended), Groq. OpenAI and Anthropic direct support is planned.
+
+### 2. Create a Game
+
+```bash
 mkdir my-game && cd my-game
-
-# Start PeridotCode and enter your prompt
 peridotcode
-# Then type: "Create a platformer with jumping and collectibles"
+# Type: "create a platformer with jumping"
 ```
 
-### 3. Edit an Existing Game
+Files are written directly into your current directory.
 
-Navigate to your game directory and run PeridotCode:
-
-```bash
-cd my-game
-peridotcode
-# Then type: "Add double jump ability to the player"
-```
-
-### 4. Run Your Game
-
-After generation, run your game:
+### 3. Run It
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Usage Examples
+### 4. Edit Later
 
-### Creating Games
-- `"Create a 2D platformer with enemies and coins"`
-- `"Make a space shooter with power-ups"`
-- `"Build a puzzle game with tile matching"`
+Re-run `peridotcode` inside the project folder and type modification prompts like:
 
-### Editing Games (OpenCode-Style)
-You can edit existing games by describing what you want to change:
+```
+change the background to black
+add enemy patrol behavior
+```
 
-**Modification Keywords**: `change`, `fix`, `update`, `tweak`, `adjust`, `modify`, `edit`, `alter`, `improve`
+## CLI Commands
 
-- `"change background to black"` - Changes existing code
-- `"fix the jumping physics"` - Fixes bugs in existing code  
-- `"update player speed to be faster"` - Updates existing values
-- `"add a health bar to the player"` - Adds new feature (uses "add")
-- `"make the enemies shoot projectiles"` - Adds new capability
-- `"add a pause menu"` - Adds new feature
+| Command | Description |
+|---------|-------------|
+| `peridotcode` | Start the TUI (default) |
+| `peridotcode doctor` | Check environment and provider config |
+| `peridotcode provider add <id> --api-key <key>` | Add a provider |
+| `peridotcode provider list --all` | List available providers |
+| `peridotcode model list --recommended` | List recommended AI models |
+| `peridotcode model use <model-id>` | Set default model |
+| `peridotcode agent "<prompt>"` | Run a one-off agent prompt |
 
-**Important**: The AI looks at your existing code and makes intelligent changes. You'll see:
-- "✓ Changes applied successfully!" - When existing files are modified
-- File changes marked with `~` for modifications, `+` for new files
+## Architecture
 
-## Commands
+Rust workspace with focused crates:
 
-- `peridotcode` - Launch the interactive TUI
-- `peridotcode doctor` - Check environment setup
-- `peridotcode provider add <name> --api-key <key>` - Add AI provider
-- `peridotcode model list` - List available models
-- `peridotcode init <name>` - Initialize a new project
+- `crates/cli` — Entrypoint and command wiring
+- `crates/tui` — Terminal UI (ratatui)
+- `crates/core` — Orchestration, planning, intent classification
+- `crates/model_gateway` — Provider abstraction (OpenRouter, Groq)
+- `crates/template_engine` — Template rendering
+- `crates/fs_engine` — Safe file writes with path validation
+- `crates/command_runner` — Local command execution
+- `crates/skills` — Modular skill abstractions
+- `crates/shared` — Common types and utilities
 
-## TUI Shortcuts
+Templates are embedded into the binary at compile time, so `cargo install` produces a fully self-contained executable.
 
-### Navigation & Control
-- `/connect` - Open provider configuration
-- `/models` - Open model picker to switch AI models
-- `Ctrl+C` or `q` - Quit
-- `Esc` - Cancel current operation
-- `Enter` - Submit prompt
+## Safety
 
-### Model Switching
-1. Type `/models` to open the model picker
-2. **The model picker fetches real-time available models from OpenRouter API** - only showing models that actually work with your API key
-3. Use ↑/↓ arrow keys to navigate models
-4. Press `Enter` to select a model
-5. The model switches immediately and you'll see "✓ Model switched to: [model-name]"
-6. Your next prompt will use the newly selected model
-
-**Note**: The model picker dynamically queries OpenRouter's API to get the actual list of available models. This ensures you never see models that would return 404 errors. If the API fetch fails, it falls back to a curated list of verified working models.
-
-### Mouse Support
-PeridotCode now supports mouse interaction!
-
-- **Click on Task Log** - Select a log entry (highlighted in cyan)
-  - **Double-click** - Copy that entry to clipboard
-- **Click on Files** - Select a file (highlighted in green)
-  - **Double-click** - Copy file path to clipboard
-- **Click on Main Panel** - Switch to input mode (from Welcome/Results)
-- **Scroll wheel** - Scroll through panels (when implemented)
-
-### Clipboard Support (Copy & Paste)
-- **Ctrl+V** - Paste text from clipboard into input (works in prompt input and API key input)
-- **Ctrl+C** (in Results screen) - Copy the last message from task log
-- **Ctrl+Shift+C** (in Results screen) - Copy all error messages
-- **Ctrl+Shift+A** (in Results screen) - Copy all task log entries
-
-Perfect for:
-- Pasting long API keys
-- Pasting prompt text from documentation
-- Copying error messages to search online or share
-- Keeping a record of what the AI generated
-
-## Architecture & Reading
-
-- [docs/architecture.md](docs/architecture.md) - How the workspace and systems interact
-- [docs/prd.md](docs/prd.md) - Product requirements and vision
-- [CHANGELOG.md](CHANGELOG.md) - History of changes and milestones
+- File writes are restricted to the current working directory.
+- Destructive commands are never auto-run.
+- All created/modified files are summarized before and after execution.
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT
